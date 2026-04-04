@@ -12,6 +12,14 @@
     "enableMultiJS": true,
     "targetPlatforms": ["emery"],
     "watchapp": { "watchface": true },
-    "resources": { "media": [] }
+    "resources": {
+      "media": [
+        {
+          "type": "png",
+          "name": "GMT_DISC",
+          "file": "gmt_disc.png"
+        }
+      ]
+    }
   }
 }

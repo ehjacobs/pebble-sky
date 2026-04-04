@@ -24,21 +24,21 @@
 #define MINUTE_TRACK_OUTER 82
 #define MINUTE_TRACK_INNER 80
 #define MARKER_OUTER_R     78
-#define MARKER_INNER_R     69
-#define MARKER_INNER_R_QTR 64
+#define MARKER_INNER_R     66
+#define MARKER_INNER_R_QTR 60
 
-// GMT ring (off-center 24-hour annulus)
-#define GMT_DISC_OFFSET_Y  (-14)   // Disc center above dial center
-#define GMT_RING_OUTER      44     // Outer radius of ring
-#define GMT_RING_INNER      30     // Inner radius (donut hole)
-#define GMT_NUM_R           38     // Radius for number placement
+// GMT ring (off-center 24-hour annulus, shifted below dial center)
+#define GMT_DISC_OFFSET_Y   19     // Disc center below dial center
+#define GMT_RING_OUTER      49     // Outer radius of ring
+#define GMT_RING_INNER      35     // Inner radius (donut hole)
+#define GMT_NUM_R           42     // Radius for number placement
 
 // Hand dimensions
-#define HOUR_HAND_LEN      52
-#define HOUR_HAND_WIDTH     6
+#define HOUR_HAND_LEN      50
+#define HOUR_HAND_WIDTH     8
 #define HOUR_HAND_TAIL     12
-#define MIN_HAND_LEN       74
-#define MIN_HAND_WIDTH      4
+#define MIN_HAND_LEN       72
+#define MIN_HAND_WIDTH      5
 #define MIN_HAND_TAIL      14
 
 // Date window
@@ -58,6 +58,7 @@ static int    s_screen_h;
 
 static GPath *s_hour_path;
 static GPath *s_min_path;
+static GBitmap *s_gmt_bitmap;
 
 static GPoint s_hour_pts[6];
 static GPoint s_min_pts[6];
@@ -66,16 +67,17 @@ static GPathInfo s_hour_info = { .num_points = 6, .points = s_hour_pts };
 static GPathInfo s_min_info  = { .num_points = 6, .points = s_min_pts };
 
 // ============================================================================
-// HAND GEOMETRY — skeletonized baton shape
+// HAND GEOMETRY — flat-tipped baton with luminous center strip
 // ============================================================================
 
 static void init_hand_points(GPoint *pts, int length, int width, int tail) {
-    pts[0] = GPoint(0, -length);
-    pts[1] = GPoint(width, -length + 10);
-    pts[2] = GPoint(width, tail);
-    pts[3] = GPoint(0, tail + 4);
-    pts[4] = GPoint(-width, tail);
-    pts[5] = GPoint(-width, -length + 10);
+    // Flat-tipped baton: polished metal look with slight shoulder taper
+    pts[0] = GPoint(-width + 1, -length);       // tip left
+    pts[1] = GPoint(width - 1, -length);        // tip right
+    pts[2] = GPoint(width, -length + 5);        // right shoulder
+    pts[3] = GPoint(width, tail);               // right base
+    pts[4] = GPoint(-width, tail);              // left base
+    pts[5] = GPoint(-width, -length + 5);       // left shoulder
 }
 
 // ============================================================================
@@ -134,19 +136,36 @@ static void draw_minute_track(GContext *ctx) {
 // ============================================================================
 
 static void draw_month_indicators(GContext *ctx, int current_month) {
+    // Rotated rectangles aligned radially, same width as hour batons
+    GPoint rect_pts[4];
+    GPathInfo rect_info = { .num_points = 4, .points = rect_pts };
+
     for (int i = 0; i < 12; i++) {
         int hour = (i + 1) % 12;
         int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
-        GPoint pos = point_on_circle(s_center, MONTH_RING_R, angle);
 
-        GRect sq = GRect(pos.x - 1, pos.y - 1, 3, 3);
+        GPoint inner = point_on_circle(s_center, MONTH_RING_R - 3, angle);
+        GPoint outer = point_on_circle(s_center, MONTH_RING_R + 3, angle);
+
+        // Perpendicular offset matching baton width (~4px total)
+        int32_t perp_angle = angle + TRIG_MAX_ANGLE / 4;
+        int16_t dx = (int16_t)((sin_lookup(perp_angle) * 2) / TRIG_MAX_RATIO);
+        int16_t dy = (int16_t)(-(cos_lookup(perp_angle) * 2) / TRIG_MAX_RATIO);
+
+        rect_pts[0] = GPoint(outer.x + dx, outer.y + dy);
+        rect_pts[1] = GPoint(outer.x - dx, outer.y - dy);
+        rect_pts[2] = GPoint(inner.x - dx, inner.y - dy);
+        rect_pts[3] = GPoint(inner.x + dx, inner.y + dy);
 
         if (i == current_month) {
             graphics_context_set_fill_color(ctx, GColorRed);
         } else {
             graphics_context_set_fill_color(ctx, GColorWhite);
         }
-        graphics_fill_rect(ctx, sq, 0, GCornerNone);
+
+        GPath *rect_path = gpath_create(&rect_info);
+        gpath_draw_filled(ctx, rect_path);
+        gpath_destroy(rect_path);
     }
 }
 
@@ -156,17 +175,16 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
 
 static void draw_hour_markers(GContext *ctx) {
     for (int i = 0; i < 12; i++) {
+        // Skip 12 (earth icon) and 3 (date window)
         if (i == 0 || i == 3) continue;
 
         int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
-        bool is_quarter = (i % 3 == 0);
-        int inner_r = is_quarter ? MARKER_INNER_R_QTR : MARKER_INNER_R;
 
-        GPoint inner = point_on_circle(s_center, inner_r, angle);
+        GPoint inner = point_on_circle(s_center, MARKER_INNER_R, angle);
         GPoint outer = point_on_circle(s_center, MARKER_OUTER_R, angle);
 
         graphics_context_set_stroke_color(ctx, GColorWhite);
-        graphics_context_set_stroke_width(ctx, is_quarter ? 5 : 3);
+        graphics_context_set_stroke_width(ctx, 4);
         graphics_draw_line(ctx, inner, outer);
     }
 }
@@ -176,22 +194,39 @@ static void draw_hour_markers(GContext *ctx) {
 // ============================================================================
 
 static void draw_earth_icon(GContext *ctx) {
-    int earth_y = s_center.y - MARKER_OUTER_R + 3;
+    int earth_y = s_center.y - MARKER_OUTER_R + 6;
     GPoint earth = GPoint(s_center.x, earth_y);
-    int r = 4;
+    int r = 6;
 
+    // Globe outline
     graphics_context_set_stroke_color(ctx, GColorWhite);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, earth, r);
 
+    // Equator
     graphics_draw_line(ctx, GPoint(earth.x - r, earth.y),
                             GPoint(earth.x + r, earth.y));
+
+    // Prime meridian (slightly elliptical — offset lines for curvature)
     graphics_draw_line(ctx, GPoint(earth.x, earth.y - r),
                             GPoint(earth.x, earth.y + r));
 
-    GRect utc_rect = GRect(s_center.x - 12, earth_y + r + 1, 24, 12);
+    // Latitude lines (tropics) for globe effect
+    graphics_draw_line(ctx, GPoint(earth.x - r + 1, earth.y - 3),
+                            GPoint(earth.x + r - 1, earth.y - 3));
+    graphics_draw_line(ctx, GPoint(earth.x - r + 1, earth.y + 3),
+                            GPoint(earth.x + r - 1, earth.y + 3));
+
+    // Curved meridian offsets to suggest 3D
+    graphics_draw_line(ctx, GPoint(earth.x - 3, earth.y - r + 1),
+                            GPoint(earth.x - 3, earth.y + r - 1));
+    graphics_draw_line(ctx, GPoint(earth.x + 3, earth.y - r + 1),
+                            GPoint(earth.x + 3, earth.y + r - 1));
+
+    // "ZULU" label below (shifted down)
+    GRect utc_rect = GRect(s_center.x - 16, earth_y + r + 2, 32, 14);
     graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, "UTC",
+    graphics_draw_text(ctx, "ZULU",
         fonts_get_system_font(FONT_KEY_GOTHIC_14),
         utc_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
@@ -225,48 +260,40 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     graphics_draw_circle(ctx, disc_center, GMT_RING_OUTER);
     graphics_draw_circle(ctx, disc_center, GMT_RING_INNER);
 
-    // Tick marks at odd hours (even hours get numbers instead)
-    for (int h = 0; h < 24; h++) {
-        if (h % 2 == 0) continue;
-        int32_t tick_angle = (h * TRIG_MAX_ANGLE / 24) - hour_angle;
-
-        GPoint inner_pt = point_on_circle(disc_center, GMT_RING_INNER + 2, tick_angle);
-        GPoint outer_pt = point_on_circle(disc_center, GMT_RING_OUTER - 4, tick_angle);
-
-        bool is_day = (h >= 6 && h < 18);
-        graphics_context_set_stroke_color(ctx, is_day ? GColorWhite : GColorLightGray);
-        graphics_context_set_stroke_width(ctx, 1);
-        graphics_draw_line(ctx, inner_pt, outer_pt);
+    // Draw rotated disc face (numbers + ticks from pre-rendered bitmap)
+    if (s_gmt_bitmap) {
+        graphics_context_set_compositing_mode(ctx, GCompOpSet);
+        int32_t rotation = TRIG_MAX_ANGLE - hour_angle;
+        graphics_draw_rotated_bitmap(ctx, s_gmt_bitmap,
+            GPoint(52, 52),    // bitmap center
+            rotation,
+            disc_center);
+        graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     }
 
-    // Numbers at even hours
-    for (int h = 0; h < 24; h += 2) {
-        int32_t num_angle = (h * TRIG_MAX_ANGLE / 24) - hour_angle;
-        GPoint num_pt = point_on_circle(disc_center, GMT_NUM_R, num_angle);
-
-        char buf[3];
-        snprintf(buf, sizeof(buf), "%d", (h == 0) ? 24 : h);
-
-        GRect text_box = GRect(num_pt.x - 8, num_pt.y - 7, 16, 14);
-
-        bool is_day = (h >= 6 && h < 18);
-        graphics_context_set_text_color(ctx, is_day ? GColorWhite : GColorLightGray);
-        graphics_draw_text(ctx, buf,
-            fonts_get_system_font(FONT_KEY_GOTHIC_14),
-            text_box, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-    }
-
-    // Red triangle pointer at 12 o'clock of ring (inside, at outer edge)
+    // Red inverted triangle with white interior, above the ring
     GPoint tri_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 6),
-        GPoint(disc_center.x - 4, disc_center.y - GMT_RING_OUTER),
-        GPoint(disc_center.x + 4, disc_center.y - GMT_RING_OUTER)
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 3),
+        GPoint(disc_center.x - 7, disc_center.y - GMT_RING_OUTER - 10),
+        GPoint(disc_center.x + 7, disc_center.y - GMT_RING_OUTER - 10)
     };
     graphics_context_set_fill_color(ctx, GColorRed);
     GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
     GPath *tri_path = gpath_create(&tri_info);
     gpath_draw_filled(ctx, tri_path);
     gpath_destroy(tri_path);
+
+    // White interior
+    GPoint inner_pts[] = {
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 0),
+        GPoint(disc_center.x - 4, disc_center.y - GMT_RING_OUTER - 6),
+        GPoint(disc_center.x + 4, disc_center.y - GMT_RING_OUTER - 6)
+    };
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    GPathInfo inner_info = { .num_points = 3, .points = inner_pts };
+    GPath *inner_path = gpath_create(&inner_info);
+    gpath_draw_filled(ctx, inner_path);
+    gpath_destroy(inner_path);
 }
 
 // ============================================================================
@@ -274,23 +301,31 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
 // ============================================================================
 
 static void draw_date_window(GContext *ctx, int mday) {
-    int date_x = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - DATE_WIN_W / 2;
-    int date_y = s_center.y - DATE_WIN_H / 2;
-    GRect win = GRect(date_x, date_y, DATE_WIN_W, DATE_WIN_H);
+    // Cyclops center at 3 o'clock
+    int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2;
+    int cy = s_center.y;
+    int lens_r = 13;
 
+    // Cyclops lens — circular dome magnifier
+    graphics_context_set_fill_color(ctx, GColorLightGray);
+    graphics_fill_circle(ctx, GPoint(cx, cy), lens_r);
+
+    // White magnified interior
     graphics_context_set_fill_color(ctx, GColorWhite);
-    graphics_fill_rect(ctx, win, 1, GCornersAll);
+    graphics_fill_circle(ctx, GPoint(cx, cy), lens_r - 2);
 
+    // Lens border
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_rect(ctx, win);
+    graphics_draw_circle(ctx, GPoint(cx, cy), lens_r);
 
+    // Magnified date number
     char date_buf[4];
     snprintf(date_buf, sizeof(date_buf), "%d", mday);
     graphics_context_set_text_color(ctx, GColorBlack);
-    GRect text_rect = GRect(date_x, date_y - 2, DATE_WIN_W, DATE_WIN_H);
+    GRect text_rect = GRect(cx - 12, cy - 11, 24, 22);
     graphics_draw_text(ctx, date_buf,
-        fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+        fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
@@ -299,11 +334,11 @@ static void draw_date_window(GContext *ctx, int mday) {
 // ============================================================================
 
 static void draw_brand_text(GContext *ctx) {
-    // Inside the GMT ring, above center
-    int text_y = s_center.y - 28;
-    GRect brand_rect = GRect(s_center.x - 30, text_y, 60, 14);
+    // Just below center, inside the GMT ring hole
+    int text_y = s_center.y + 14;
+    GRect brand_rect = GRect(s_center.x - 20, text_y, 40, 14);
     graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, "SKY GMT",
+    graphics_draw_text(ctx, "SKY",
         fonts_get_system_font(FONT_KEY_GOTHIC_14),
         brand_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
@@ -312,25 +347,25 @@ static void draw_brand_text(GContext *ctx) {
 // DRAW: Clock hands
 // ============================================================================
 
-static void draw_hand(GContext *ctx, GPath *path, int32_t angle, GColor fill, int slit_width) {
+static void draw_hand(GContext *ctx, GPath *path, int32_t angle, int lume_width, int hand_len) {
     gpath_rotate_to(path, angle);
     gpath_move_to(path, s_center);
 
-    graphics_context_set_fill_color(ctx, fill);
+    // Polished metal body
+    graphics_context_set_fill_color(ctx, GColorLightGray);
     gpath_draw_filled(ctx, path);
 
+    // Black outline
     graphics_context_set_stroke_color(ctx, GColorBlack);
     graphics_context_set_stroke_width(ctx, 1);
     gpath_draw_outline(ctx, path);
 
-    if (slit_width > 0) {
-        int slit_len = (slit_width == HOUR_HAND_WIDTH) ? HOUR_HAND_LEN - 18 : MIN_HAND_LEN - 18;
-        GPoint slit_end = point_on_circle(s_center, slit_len, angle);
-        GPoint slit_start = point_on_circle(s_center, 14, angle);
-        graphics_context_set_stroke_color(ctx, GColorDarkGray);
-        graphics_context_set_stroke_width(ctx, 1);
-        graphics_draw_line(ctx, slit_start, slit_end);
-    }
+    // Luminous center strip (white)
+    GPoint lume_end = point_on_circle(s_center, hand_len - 6, angle);
+    GPoint lume_start = point_on_circle(s_center, 10, angle);
+    graphics_context_set_stroke_color(ctx, GColorWhite);
+    graphics_context_set_stroke_width(ctx, lume_width);
+    graphics_draw_line(ctx, lume_start, lume_end);
 }
 
 static void draw_hands(GContext *ctx, struct tm *t) {
@@ -338,8 +373,8 @@ static void draw_hands(GContext *ctx, struct tm *t) {
                          (t->tm_min * TRIG_MAX_ANGLE / 12 / 60);
     int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60);
 
-    draw_hand(ctx, s_min_path, min_angle, GColorWhite, MIN_HAND_WIDTH);
-    draw_hand(ctx, s_hour_path, hour_angle, GColorWhite, HOUR_HAND_WIDTH);
+    draw_hand(ctx, s_min_path, min_angle, 2, MIN_HAND_LEN);
+    draw_hand(ctx, s_hour_path, hour_angle, 4, HOUR_HAND_LEN);
 
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_circle(ctx, s_center, 5);
@@ -365,11 +400,11 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     struct tm *t = localtime(&now);
     if (!t) return;
 
+    draw_hour_markers(ctx);
+    draw_gmt_ring(ctx, t->tm_hour, t->tm_min);
     draw_bezel(ctx);
     draw_minute_track(ctx);
     draw_month_indicators(ctx, t->tm_mon);
-    draw_gmt_ring(ctx, t->tm_hour, t->tm_min);
-    draw_hour_markers(ctx);
     draw_earth_icon(ctx);
     draw_brand_text(ctx);
     draw_date_window(ctx, t->tm_mday);
@@ -406,9 +441,11 @@ static void main_window_load(Window *window) {
     init_hand_points(s_min_pts, MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL);
     s_hour_path = gpath_create(&s_hour_info);
     s_min_path  = gpath_create(&s_min_info);
+    s_gmt_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GMT_DISC);
 }
 
 static void main_window_unload(Window *window) {
+    if (s_gmt_bitmap) { gbitmap_destroy(s_gmt_bitmap); s_gmt_bitmap = NULL; }
     if (s_hour_path) { gpath_destroy(s_hour_path); s_hour_path = NULL; }
     if (s_min_path)  { gpath_destroy(s_min_path);  s_min_path = NULL; }
     if (s_canvas_layer) { layer_destroy(s_canvas_layer); s_canvas_layer = NULL; }
