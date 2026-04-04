@@ -1,0 +1,8 @@
+build/
+.skill-ref/
+.lock-waf*
+.claude/settings.local.json
+screenshot_*.png
+preview_*.gif
+icon_*.png
+inspiration.png

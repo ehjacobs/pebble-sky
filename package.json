@@ -1,0 +1,17 @@
+{
+  "name": "sky-gmt",
+  "author": "Evan Jacobs",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Sky GMT",
+    "uuid": "f2bad8cf-cf96-4cf5-9215-847063fa0b56",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "watchapp": { "watchface": true },
+    "resources": { "media": [] }
+  }
+}
