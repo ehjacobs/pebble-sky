@@ -3,6 +3,7 @@ build/
 .lock-waf*
 .claude/settings.local.json
 screenshot_*.png
+!screenshot_emery.png
 preview_*.gif
 icon_*.png
 inspiration.png
