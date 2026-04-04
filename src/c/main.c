@@ -4,7 +4,7 @@
  * Features:
  *   - Analog dial with rectangular baton hour markers
  *   - Skeletonized hour and minute hands
- *   - 24-hour subdial with red triangle pointer
+ *   - 24-hour GMT ring (off-center annulus with rotating numbers)
  *   - Month indicator ring (12 apertures, current month = red)
  *   - Date window at 3 o'clock
  *   - Fluted bezel texture
@@ -27,10 +27,11 @@
 #define MARKER_INNER_R     69
 #define MARKER_INNER_R_QTR 64
 
-// 24-hour subdial
-#define SUBDIAL_OFFSET_Y  (-34)
-#define SUBDIAL_RADIUS     22
-#define SUBDIAL_NUM_R      16
+// GMT ring (off-center 24-hour annulus)
+#define GMT_DISC_OFFSET_Y  (-14)   // Disc center above dial center
+#define GMT_RING_OUTER      44     // Outer radius of ring
+#define GMT_RING_INNER      30     // Inner radius (donut hole)
+#define GMT_NUM_R           38     // Radius for number placement
 
 // Hand dimensions
 #define HOUR_HAND_LEN      52
@@ -93,12 +94,10 @@ static GPoint point_on_circle(GPoint center, int radius, int32_t angle) {
 // ============================================================================
 
 static void draw_bezel(GContext *ctx) {
-    // Outer ring border
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, s_center, BEZEL_OUTER);
 
-    // Fluting lines
     for (int i = 0; i < 120; i++) {
         int32_t angle = (i * TRIG_MAX_ANGLE) / 120;
         GPoint inner = point_on_circle(s_center, BEZEL_INNER, angle);
@@ -109,14 +108,13 @@ static void draw_bezel(GContext *ctx) {
         graphics_draw_line(ctx, inner, outer);
     }
 
-    // Inner bezel ring
     graphics_context_set_stroke_color(ctx, GColorLightGray);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, s_center, BEZEL_INNER);
 }
 
 // ============================================================================
-// DRAW: Minute track (fine tick marks between hours)
+// DRAW: Minute track
 // ============================================================================
 
 static void draw_minute_track(GContext *ctx) {
@@ -141,7 +139,6 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
         int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
         GPoint pos = point_on_circle(s_center, MONTH_RING_R, angle);
 
-        // Small 3x3 apertures
         GRect sq = GRect(pos.x - 1, pos.y - 1, 3, 3);
 
         if (i == current_month) {
@@ -159,7 +156,6 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
 
 static void draw_hour_markers(GContext *ctx) {
     for (int i = 0; i < 12; i++) {
-        // Skip 12 o'clock (earth icon) and 3 o'clock (date window)
         if (i == 0 || i == 3) continue;
 
         int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
@@ -169,7 +165,6 @@ static void draw_hour_markers(GContext *ctx) {
         GPoint inner = point_on_circle(s_center, inner_r, angle);
         GPoint outer = point_on_circle(s_center, MARKER_OUTER_R, angle);
 
-        // Thick white baton
         graphics_context_set_stroke_color(ctx, GColorWhite);
         graphics_context_set_stroke_width(ctx, is_quarter ? 5 : 3);
         graphics_draw_line(ctx, inner, outer);
@@ -181,25 +176,19 @@ static void draw_hour_markers(GContext *ctx) {
 // ============================================================================
 
 static void draw_earth_icon(GContext *ctx) {
-    // Position in the marker zone at 12 o'clock
     int earth_y = s_center.y - MARKER_OUTER_R + 3;
     GPoint earth = GPoint(s_center.x, earth_y);
     int r = 4;
 
-    // Globe outline
     graphics_context_set_stroke_color(ctx, GColorWhite);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, earth, r);
 
-    // Equator
     graphics_draw_line(ctx, GPoint(earth.x - r, earth.y),
                             GPoint(earth.x + r, earth.y));
-
-    // Prime meridian
     graphics_draw_line(ctx, GPoint(earth.x, earth.y - r),
                             GPoint(earth.x, earth.y + r));
 
-    // "UTC" label below
     GRect utc_rect = GRect(s_center.x - 12, earth_y + r + 1, 24, 12);
     graphics_context_set_text_color(ctx, GColorWhite);
     graphics_draw_text(ctx, "UTC",
@@ -208,55 +197,70 @@ static void draw_earth_icon(GContext *ctx) {
 }
 
 // ============================================================================
-// DRAW: 24-hour subdial
+// DRAW: 24-hour GMT ring (off-center annulus)
 // ============================================================================
 
-static void draw_24h_subdial(GContext *ctx, int hour_24, int minutes) {
-    GPoint sub_center = GPoint(s_center.x, s_center.y + SUBDIAL_OFFSET_Y);
+static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
+    GPoint disc_center = GPoint(s_center.x, s_center.y + GMT_DISC_OFFSET_Y);
 
-    // Subdial background
-    graphics_context_set_fill_color(ctx, GColorDarkGray);
-    graphics_fill_circle(ctx, sub_center, SUBDIAL_RADIUS);
+    GRect ring_rect = GRect(disc_center.x - GMT_RING_OUTER,
+                            disc_center.y - GMT_RING_OUTER,
+                            GMT_RING_OUTER * 2,
+                            GMT_RING_OUTER * 2);
 
-    // Border ring
-    graphics_context_set_stroke_color(ctx, GColorLightGray);
-    graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_circle(ctx, sub_center, SUBDIAL_RADIUS);
+    int ring_thickness = GMT_RING_OUTER - GMT_RING_INNER;
 
-    // Current hour rotation
+    // Hour rotation angle
     int32_t hour_angle = ((hour_24 * TRIG_MAX_ANGLE) / 24) +
                          ((minutes * TRIG_MAX_ANGLE) / 24 / 60);
 
-    // Tick marks and cardinal numbers
+    // Fill the full ring in dark navy
+    graphics_context_set_fill_color(ctx, GColorOxfordBlue);
+    graphics_fill_radial(ctx, ring_rect, GOvalScaleModeFitCircle,
+                         ring_thickness, 0, TRIG_MAX_ANGLE);
+
+    // Ring borders
+    graphics_context_set_stroke_color(ctx, GColorLightGray);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_circle(ctx, disc_center, GMT_RING_OUTER);
+    graphics_draw_circle(ctx, disc_center, GMT_RING_INNER);
+
+    // Tick marks at odd hours (even hours get numbers instead)
     for (int h = 0; h < 24; h++) {
+        if (h % 2 == 0) continue;
         int32_t tick_angle = (h * TRIG_MAX_ANGLE / 24) - hour_angle;
 
-        GPoint inner_pt = point_on_circle(sub_center, SUBDIAL_RADIUS - 5, tick_angle);
-        GPoint outer_pt = point_on_circle(sub_center, SUBDIAL_RADIUS - 1, tick_angle);
+        GPoint inner_pt = point_on_circle(disc_center, GMT_RING_INNER + 2, tick_angle);
+        GPoint outer_pt = point_on_circle(disc_center, GMT_RING_OUTER - 4, tick_angle);
 
         bool is_day = (h >= 6 && h < 18);
         graphics_context_set_stroke_color(ctx, is_day ? GColorWhite : GColorLightGray);
-        graphics_context_set_stroke_width(ctx, (h % 6 == 0) ? 2 : 1);
+        graphics_context_set_stroke_width(ctx, 1);
         graphics_draw_line(ctx, inner_pt, outer_pt);
-
-        if (h % 6 == 0) {
-            GPoint num_pt = point_on_circle(sub_center, SUBDIAL_NUM_R - 2, tick_angle);
-            char buf[3];
-            snprintf(buf, sizeof(buf), "%d", (h == 0) ? 24 : h);
-
-            GRect text_box = GRect(num_pt.x - 8, num_pt.y - 7, 16, 14);
-            graphics_context_set_text_color(ctx, GColorWhite);
-            graphics_draw_text(ctx, buf,
-                fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                text_box, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-        }
     }
 
-    // Red inverted triangle pointer — tight to subdial edge
+    // Numbers at even hours
+    for (int h = 0; h < 24; h += 2) {
+        int32_t num_angle = (h * TRIG_MAX_ANGLE / 24) - hour_angle;
+        GPoint num_pt = point_on_circle(disc_center, GMT_NUM_R, num_angle);
+
+        char buf[3];
+        snprintf(buf, sizeof(buf), "%d", (h == 0) ? 24 : h);
+
+        GRect text_box = GRect(num_pt.x - 8, num_pt.y - 7, 16, 14);
+
+        bool is_day = (h >= 6 && h < 18);
+        graphics_context_set_text_color(ctx, is_day ? GColorWhite : GColorLightGray);
+        graphics_draw_text(ctx, buf,
+            fonts_get_system_font(FONT_KEY_GOTHIC_14),
+            text_box, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
+
+    // Red triangle pointer at 12 o'clock of ring (inside, at outer edge)
     GPoint tri_pts[] = {
-        GPoint(sub_center.x, sub_center.y - SUBDIAL_RADIUS + 3),
-        GPoint(sub_center.x - 3, sub_center.y - SUBDIAL_RADIUS - 2),
-        GPoint(sub_center.x + 3, sub_center.y - SUBDIAL_RADIUS - 2)
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 6),
+        GPoint(disc_center.x - 4, disc_center.y - GMT_RING_OUTER),
+        GPoint(disc_center.x + 4, disc_center.y - GMT_RING_OUTER)
     };
     graphics_context_set_fill_color(ctx, GColorRed);
     GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
@@ -270,21 +274,17 @@ static void draw_24h_subdial(GContext *ctx, int hour_24, int minutes) {
 // ============================================================================
 
 static void draw_date_window(GContext *ctx, int mday) {
-    // Center in the marker zone at 3 o'clock
     int date_x = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - DATE_WIN_W / 2;
     int date_y = s_center.y - DATE_WIN_H / 2;
     GRect win = GRect(date_x, date_y, DATE_WIN_W, DATE_WIN_H);
 
-    // White background
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, win, 1, GCornersAll);
 
-    // Border
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_rect(ctx, win);
 
-    // Date number
     char date_buf[4];
     snprintf(date_buf, sizeof(date_buf), "%d", mday);
     graphics_context_set_text_color(ctx, GColorBlack);
@@ -299,10 +299,9 @@ static void draw_date_window(GContext *ctx, int mday) {
 // ============================================================================
 
 static void draw_brand_text(GContext *ctx) {
-    GPoint sub_center = GPoint(s_center.x, s_center.y + SUBDIAL_OFFSET_Y);
-    int text_y = sub_center.y + SUBDIAL_RADIUS + 2;
-
-    GRect brand_rect = GRect(s_center.x - 40, text_y, 80, 14);
+    // Inside the GMT ring, above center
+    int text_y = s_center.y - 28;
+    GRect brand_rect = GRect(s_center.x - 30, text_y, 60, 14);
     graphics_context_set_text_color(ctx, GColorWhite);
     graphics_draw_text(ctx, "SKY GMT",
         fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -317,16 +316,13 @@ static void draw_hand(GContext *ctx, GPath *path, int32_t angle, GColor fill, in
     gpath_rotate_to(path, angle);
     gpath_move_to(path, s_center);
 
-    // Outer fill
     graphics_context_set_fill_color(ctx, fill);
     gpath_draw_filled(ctx, path);
 
-    // Outline
     graphics_context_set_stroke_color(ctx, GColorBlack);
     graphics_context_set_stroke_width(ctx, 1);
     gpath_draw_outline(ctx, path);
 
-    // Skeletonized center slit
     if (slit_width > 0) {
         int slit_len = (slit_width == HOUR_HAND_WIDTH) ? HOUR_HAND_LEN - 18 : MIN_HAND_LEN - 18;
         GPoint slit_end = point_on_circle(s_center, slit_len, angle);
@@ -342,11 +338,9 @@ static void draw_hands(GContext *ctx, struct tm *t) {
                          (t->tm_min * TRIG_MAX_ANGLE / 12 / 60);
     int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60);
 
-    // Minute hand first (under hour hand)
     draw_hand(ctx, s_min_path, min_angle, GColorWhite, MIN_HAND_WIDTH);
     draw_hand(ctx, s_hour_path, hour_angle, GColorWhite, HOUR_HAND_WIDTH);
 
-    // Center pinion
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_circle(ctx, s_center, 5);
     graphics_context_set_fill_color(ctx, GColorBlack);
@@ -360,24 +354,22 @@ static void draw_hands(GContext *ctx, struct tm *t) {
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
 
-    // Background
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-    // Dial background circle
-    graphics_context_set_fill_color(ctx, GColorOxfordBlue);
+    // Lighter blue dial
+    graphics_context_set_fill_color(ctx, GColorDukeBlue);
     graphics_fill_circle(ctx, s_center, DIAL_RADIUS);
 
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     if (!t) return;
 
-    // Draw layers back to front
     draw_bezel(ctx);
     draw_minute_track(ctx);
     draw_month_indicators(ctx, t->tm_mon);
+    draw_gmt_ring(ctx, t->tm_hour, t->tm_min);
     draw_hour_markers(ctx);
-    draw_24h_subdial(ctx, t->tm_hour, t->tm_min);
     draw_earth_icon(ctx);
     draw_brand_text(ctx);
     draw_date_window(ctx, t->tm_mday);
