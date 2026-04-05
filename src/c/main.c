@@ -27,10 +27,10 @@
 #define MARKER_INNER_R_QTR  83
 
 // GMT ring (off-center 24-hour annulus, shifted below dial center)
-#define GMT_DISC_OFFSET_Y   24
-#define GMT_RING_OUTER      65
-#define GMT_RING_INNER      45
-#define GMT_NUM_R           55
+#define GMT_DISC_OFFSET_Y   26
+#define GMT_RING_OUTER      73
+#define GMT_RING_INNER      49
+#define GMT_NUM_R           61
 
 // Hand dimensions
 #define HOUR_HAND_LEN       70
@@ -270,8 +270,8 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     // Red inverted triangle pointer above the ring
     GPoint tri_pts[] = {
         GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 1),
-        GPoint(disc_center.x - 9, disc_center.y - GMT_RING_OUTER - 18),
-        GPoint(disc_center.x + 9, disc_center.y - GMT_RING_OUTER - 18)
+        GPoint(disc_center.x - 10, disc_center.y - GMT_RING_OUTER - 22),
+        GPoint(disc_center.x + 10, disc_center.y - GMT_RING_OUTER - 22)
     };
     graphics_context_set_fill_color(ctx, GColorRed);
     GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
@@ -282,8 +282,8 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     // White inner triangle
     GPoint inner_pts[] = {
         GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 5),
-        GPoint(disc_center.x - 5, disc_center.y - GMT_RING_OUTER - 13),
-        GPoint(disc_center.x + 5, disc_center.y - GMT_RING_OUTER - 13)
+        GPoint(disc_center.x - 6, disc_center.y - GMT_RING_OUTER - 16),
+        GPoint(disc_center.x + 6, disc_center.y - GMT_RING_OUTER - 16)
     };
     graphics_context_set_fill_color(ctx, GColorWhite);
     GPathInfo inner_info = { .num_points = 3, .points = inner_pts };
@@ -326,7 +326,7 @@ static void draw_date_window(GContext *ctx, int mday) {
     char date_buf[4];
     snprintf(date_buf, sizeof(date_buf), "%d", mday);
     graphics_context_set_text_color(ctx, GColorBlack);
-    GRect text_rect = GRect(cx - 14, cy - 14, 28, 24);
+    GRect text_rect = GRect(cx - 14, cy - 17, 28, 24);
     graphics_draw_text(ctx, date_buf,
         fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
