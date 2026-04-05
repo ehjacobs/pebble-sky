@@ -20,8 +20,9 @@
 
 #define DIAL_RADIUS        126
 #define MONTH_RING_R       119
-#define MINUTE_TRACK_OUTER 115
-#define MINUTE_TRACK_INNER 112
+#define TICK_OUTER_R       124   // aligned with month window outer edge
+#define TICK_MIN_INNER_R   116   // minute ticks (8px long)
+#define TICK_HALF_INNER_R  120   // half-minute ticks (4px long)
 #define MARKER_OUTER_R     109
 #define MARKER_INNER_R      83
 
@@ -38,6 +39,8 @@
 #define MIN_HAND_LEN       102
 #define MIN_HAND_WIDTH       7
 #define MIN_HAND_TAIL       20
+#define SEC_HAND_LEN       110
+#define SEC_HAND_TAIL       25
 
 // GMT disc bitmap center (150×150 image)
 #define GMT_BITMAP_CENTER   75
@@ -111,11 +114,24 @@ static void draw_dial_edge(GContext *ctx) {
 static void draw_minute_track(GContext *ctx) {
     graphics_context_set_stroke_color(ctx, GColorLightGray);
     graphics_context_set_stroke_width(ctx, 1);
-    for (int i = 0; i < 60; i++) {
-        if (i % 5 == 0) continue;
-        int32_t angle = (i * TRIG_MAX_ANGLE) / 60;
-        GPoint inner = point_on_circle(s_center, MINUTE_TRACK_INNER, angle);
-        GPoint outer = point_on_circle(s_center, MINUTE_TRACK_OUTER, angle);
+
+    // 120 positions = every 30 seconds
+    for (int i = 0; i < 120; i++) {
+        int pos = i % 10;
+        if (pos == 0) continue;               // hour marker position
+        if (pos == 1 || pos == 9) continue;    // too close to hour marker
+
+        int32_t angle = (i * TRIG_MAX_ANGLE) / 120;
+        int inner_r;
+
+        if (pos % 2 == 0) {
+            inner_r = TICK_MIN_INNER_R;        // minute tick (longer)
+        } else {
+            inner_r = TICK_HALF_INNER_R;       // half-minute tick (shorter)
+        }
+
+        GPoint inner = point_on_circle(s_center, inner_r, angle);
+        GPoint outer = point_on_circle(s_center, TICK_OUTER_R, angle);
         graphics_draw_line(ctx, inner, outer);
     }
 }
@@ -375,9 +391,26 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     int32_t hour_angle = ((t->tm_hour % 12) * TRIG_MAX_ANGLE / 12) +
                          (t->tm_min * TRIG_MAX_ANGLE / 12 / 60);
     int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60);
+    int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
 
-    draw_hand(ctx, s_min_path, min_angle, 3, MIN_HAND_LEN);
+    // Draw order: hour (bottom), minute, seconds (top)
     draw_hand(ctx, s_hour_path, hour_angle, 5, HOUR_HAND_LEN);
+    draw_hand(ctx, s_min_path, min_angle, 3, MIN_HAND_LEN);
+
+    // Seconds hand — tapered from 3px at center to 1px at tip
+    GPoint sec_tip = point_on_circle(s_center, SEC_HAND_LEN, sec_angle);
+    GPoint sec_mid = point_on_circle(s_center, SEC_HAND_LEN / 2, sec_angle);
+    GPoint sec_tail = point_on_circle(s_center, SEC_HAND_TAIL,
+                                      sec_angle + TRIG_MAX_ANGLE / 2);
+
+    // Thick inner portion (tail to midpoint)
+    graphics_context_set_stroke_color(ctx, GColorLightGray);
+    graphics_context_set_stroke_width(ctx, 3);
+    graphics_draw_line(ctx, sec_tail, sec_mid);
+
+    // Slightly thinner outer portion (midpoint to tip)
+    graphics_context_set_stroke_width(ctx, 2);
+    graphics_draw_line(ctx, sec_mid, sec_tip);
 
     // Center pivot
     graphics_context_set_fill_color(ctx, GColorWhite);
@@ -468,7 +501,7 @@ static void init(void) {
         .unload = main_window_unload
     });
     window_stack_push(s_main_window, true);
-    tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+    tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
 }
 
 static void deinit(void) {
