@@ -642,9 +642,14 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, s_canvas_layer);
 
     s_gmt_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GMT_DISC);
+
+    // Signal Quick View awareness (no-op — we let the overlay render on top)
+    UnobstructedAreaHandlers ua_handlers = { 0 };
+    unobstructed_area_service_subscribe(ua_handlers, NULL);
 }
 
 static void main_window_unload(Window *window) {
+    unobstructed_area_service_unsubscribe();
     if (s_gmt_bitmap) { gbitmap_destroy(s_gmt_bitmap); s_gmt_bitmap = NULL; }
     if (s_canvas_layer) { layer_destroy(s_canvas_layer); s_canvas_layer = NULL; }
 }
