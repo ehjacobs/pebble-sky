@@ -152,6 +152,9 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
         GPathInfo info = { .num_points = 4, .points = pts };
         GPath *path = gpath_create(&info);
         gpath_draw_filled(ctx, path);
+        graphics_context_set_stroke_color(ctx, GColorPictonBlue);
+        graphics_context_set_stroke_width(ctx, 1);
+        gpath_draw_outline(ctx, path);
         gpath_destroy(path);
     }
 }
@@ -256,7 +259,7 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes, int seconds) 
                          ring_thickness, 0, TRIG_MAX_ANGLE);
 
     // Ring borders
-    graphics_context_set_stroke_color(ctx, GColorLightGray);
+    graphics_context_set_stroke_color(ctx, GColorPictonBlue);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, disc_center, GMT_RING_OUTER);
     graphics_draw_circle(ctx, disc_center, GMT_RING_INNER);
@@ -323,10 +326,13 @@ static void draw_date_window(GContext *ctx, int mday) {
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_round_rect(ctx, lens_rect, corner_r);
 
-    // White inner rectangle
+    // White inner rectangle with light blue border
     GRect date_rect = GRect(cx - date_w / 2, cy - date_h / 2, date_w, date_h);
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, date_rect, 0, GCornerNone);
+    graphics_context_set_stroke_color(ctx, GColorPictonBlue);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_rect(ctx, date_rect);
 
     if (s_show_battery) {
         BatteryChargeState bat = battery_state_service_peek();
@@ -521,12 +527,18 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     graphics_context_set_stroke_width(ctx, 2);
     graphics_draw_line(ctx, sec_mid, sec_tip);
 
-    // Center pivot
+    // Center pivot — outline leaves gaps where the seconds hand passes through
     graphics_context_set_fill_color(ctx, GColorLightGray);
     graphics_fill_circle(ctx, s_center, 7);
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_circle(ctx, s_center, 7);
+    int32_t gap = TRIG_MAX_ANGLE * 15 / 360;  // 15° half-gap covers 3px hand width
+    GRect pivot_rect = GRect(s_center.x - 7, s_center.y - 7, 15, 15);
+    graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
+                      sec_angle + gap, sec_angle + TRIG_MAX_ANGLE / 2 - gap);
+    graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
+                      sec_angle + TRIG_MAX_ANGLE / 2 + gap,
+                      sec_angle + TRIG_MAX_ANGLE - gap);
     graphics_context_set_fill_color(ctx, GColorDarkGray);
     graphics_fill_circle(ctx, s_center, 2);
 }

@@ -1,8 +1,8 @@
-# Sky GMT
+# Sky-Pebble
 
 Analog watchface with GMT and annual calendar complications for the Pebble Round 2.
 
-![Sky GMT](screenshot_gabbro.png)
+![Sky-Pebble](screenshot_gabbro.png)
 
 ## Features
 
@@ -10,7 +10,7 @@ Analog watchface with GMT and annual calendar complications for the Pebble Round
 - Tapered seconds hand
 - 24-hour GMT ring showing UTC time with red/white triangle pointer
 - Month indicator ring (current month highlighted in red)
-- Date window at 3 o'clock with magnifier lens
+- Date window at 3 o'clock with magnifier lens (tap wrist to show battery level, color-coded by charge)
 - "SKY-PEBBLE" brand text and decorative marks
 - Clean polished dial edge
 - Earth/ZULU icon at 12 o'clock
