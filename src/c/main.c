@@ -56,6 +56,10 @@ static GPoint s_center;
 
 static GBitmap *s_gmt_bitmap;
 
+// Battery display state (shown on wrist tap)
+static bool s_show_battery = false;
+static AppTimer *s_battery_timer = NULL;
+
 // ============================================================================
 // DRAWING HELPERS
 // ============================================================================
@@ -294,15 +298,16 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes, int seconds) 
 }
 
 // ============================================================================
-// DRAW: Date window at 3 o'clock
+// DRAW: Date window at 3 o'clock (also shows battery % on tap)
 // ============================================================================
 
 static void draw_date_window(GContext *ctx, int mday) {
     int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - 2;
     int cy = s_center.y;
-    int date_w = 26;
     int date_h = 18;
     int pad = 5;
+
+    int date_w = 26;
     int lens_w = date_w + pad * 2;
     int lens_h = date_h + pad * 2;
     int corner_r = lens_h / 2;
@@ -318,19 +323,40 @@ static void draw_date_window(GContext *ctx, int mday) {
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_round_rect(ctx, lens_rect, corner_r);
 
-    // White date rectangle
+    // White inner rectangle
     GRect date_rect = GRect(cx - date_w / 2, cy - date_h / 2, date_w, date_h);
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, date_rect, 0, GCornerNone);
 
-    // Date number
-    char date_buf[4];
-    snprintf(date_buf, sizeof(date_buf), "%d", mday);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    GRect text_rect = GRect(cx - 14, cy - 17, 28, 24);
-    graphics_draw_text(ctx, date_buf,
-        fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-        text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    if (s_show_battery) {
+        BatteryChargeState bat = battery_state_service_peek();
+        int pct = (int)bat.charge_percent;
+        char bat_buf[4];
+        snprintf(bat_buf, sizeof(bat_buf), "%d", pct);
+
+        GColor color;
+        if (pct >= 40) {
+            color = GColorGreen;
+        } else if (pct >= 20) {
+            color = GColorChromeYellow;
+        } else {
+            color = GColorRed;
+        }
+
+        graphics_context_set_text_color(ctx, color);
+        GRect text_rect = GRect(cx - date_w / 2, cy - 14, date_w, 18);
+        graphics_draw_text(ctx, bat_buf,
+            fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    } else {
+        char date_buf[4];
+        snprintf(date_buf, sizeof(date_buf), "%d", mday);
+        graphics_context_set_text_color(ctx, GColorBlack);
+        GRect text_rect = GRect(cx - 14, cy - 17, 28, 24);
+        graphics_draw_text(ctx, date_buf,
+            fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+            text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
 }
 
 // ============================================================================
@@ -506,6 +532,42 @@ static void draw_hands(GContext *ctx, struct tm *t) {
 }
 
 // ============================================================================
+// BATTERY TAP HANDLER
+// ============================================================================
+
+static void battery_timer_callback(void *data) {
+    s_show_battery = false;
+    s_battery_timer = NULL;
+    if (s_canvas_layer) {
+        layer_mark_dirty(s_canvas_layer);
+    }
+}
+
+static void show_battery(void) {
+    s_show_battery = true;
+    if (s_battery_timer) {
+        app_timer_reschedule(s_battery_timer, 3000);
+    } else {
+        s_battery_timer = app_timer_register(3000, battery_timer_callback, NULL);
+    }
+    if (s_canvas_layer) {
+        layer_mark_dirty(s_canvas_layer);
+    }
+}
+
+static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+    show_battery();
+}
+
+static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+    show_battery();
+}
+
+static void click_config_provider(void *context) {
+    window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
+}
+
+// ============================================================================
 // MAIN CANVAS UPDATE
 // ============================================================================
 
@@ -586,11 +648,15 @@ static void init(void) {
         .load = main_window_load,
         .unload = main_window_unload
     });
+    window_set_click_config_provider(s_main_window, click_config_provider);
     window_stack_push(s_main_window, true);
     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+    accel_tap_service_subscribe(accel_tap_handler);
 }
 
 static void deinit(void) {
+    accel_tap_service_unsubscribe();
+    if (s_battery_timer) { app_timer_cancel(s_battery_timer); s_battery_timer = NULL; }
     tick_timer_service_unsubscribe();
     if (s_main_window) { window_destroy(s_main_window); s_main_window = NULL; }
 }
