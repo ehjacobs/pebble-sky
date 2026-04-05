@@ -55,7 +55,7 @@ build/pebble-sky.pbw  # Built watchface artifact
 ## Key Constraints (Pebble C Development)
 
 - **No floating point** — use `sin_lookup()` / `cos_lookup()` with `TRIG_MAX_ANGLE` (65536 = full circle) and `TRIG_MAX_RATIO` (65536)
-- **SECOND_UNIT** — currently using `tick_timer_service_subscribe(SECOND_UNIT, ...)` for the seconds hand. Switch back to `MINUTE_UNIT` if seconds hand is removed (battery drain)
+- **Tick timer** — dynamically switches between `SECOND_UNIT` (seconds hand visible) and `MINUTE_UNIT` (seconds hand hidden) based on accelerometer motion detection with a 30-second inactivity timeout
 - **Pre-allocate GPath** — create paths in `window_load`, destroy in `window_unload`
 - **Dynamic bounds** — use `layer_get_bounds()`, never hardcode 260x260
 - **Antialiasing** — call `graphics_context_set_antialiased(ctx, true)` for crisp edges; use odd stroke widths (1, 3, 5) for best pixel alignment

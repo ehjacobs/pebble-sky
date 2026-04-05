@@ -1,5 +1,5 @@
 /**
- * Sky GMT — Analog watchface with GMT complications for Pebble Round 2
+ * Sky-Pebble — Analog watchface with GMT and Annual Calendar complications for Pebble Round 2
  *
  * Features:
  *   - Round 260×260 color display (gabbro platform)
@@ -45,6 +45,9 @@
 // GMT disc bitmap center (154×154 image)
 #define GMT_BITMAP_CENTER   77
 
+// Number of GPath sections per skeletonized hand
+#define HAND_PARTS 5
+
 // ============================================================================
 // GLOBALS
 // ============================================================================
@@ -59,6 +62,32 @@ static GBitmap *s_gmt_bitmap;
 // Battery display state (shown on wrist tap)
 static bool s_show_battery = false;
 static AppTimer *s_battery_timer = NULL;
+
+// Seconds hand auto-disable (activates on tap, disables after timeout)
+#define SECONDS_TIMEOUT_MS 30000
+static bool s_seconds_active = true;
+static AppTimer *s_seconds_timer = NULL;
+
+// Pre-allocated paths: static dial elements (computed once in window_load)
+static GPath *s_month_paths[12];
+static GPoint s_month_pts[12][4];
+
+static GPath *s_marker_paths[12];   // NULL at positions 0 and 3
+static GPoint s_marker_pts[12][4];
+
+static GPath *s_brand_paths[2];
+static GPoint s_brand_pts[2][4];
+
+static GPath *s_gmt_tri_path;
+static GPoint s_gmt_tri_pts[3];
+static GPath *s_gmt_tri_inner_path;
+static GPoint s_gmt_tri_inner_pts[3];
+
+// Pre-allocated paths: clock hands (origin-relative, rotated at draw time)
+static GPath *s_hour_hand[HAND_PARTS];
+static GPoint s_hour_pts[HAND_PARTS][4];
+static GPath *s_min_hand[HAND_PARTS];
+static GPoint s_min_pts[HAND_PARTS][4];
 
 // ============================================================================
 // DRAWING HELPERS
@@ -75,6 +104,151 @@ static GPoint point_on_circle(GPoint center, int radius, int32_t angle) {
         .x = center.x + trig_round(sin_lookup(angle) * (int32_t)radius),
         .y = center.y - trig_round(cos_lookup(angle) * (int32_t)radius)
     };
+}
+
+// ============================================================================
+// PATH PRE-ALLOCATION
+// ============================================================================
+
+static void create_hand_paths(GPath **paths, GPoint pts[][4],
+                              int hand_len, int hand_width,
+                              int hand_tail, int lume_width) {
+    int tip_w = hand_width - 2;
+    int total = hand_tail + hand_len;
+    int cut_start = 18;
+    int cut_end = hand_len / 2 - 3;
+    int hw_cs = hand_width - 2 * (cut_start + hand_tail) / total;
+    int hw_ce = hand_width - 2 * (cut_end + hand_tail) / total;
+    int rail_cs = hw_cs - lume_width;
+    int rail_ce = hw_ce - lume_width;
+
+    // 0: Base section
+    pts[0][0] = GPoint(-hw_cs, -cut_start);
+    pts[0][1] = GPoint(hw_cs, -cut_start);
+    pts[0][2] = GPoint(hand_width, hand_tail);
+    pts[0][3] = GPoint(-hand_width, hand_tail);
+    paths[0] = gpath_create(&(GPathInfo){ .num_points = 4, .points = pts[0] });
+
+    // 1: Left rail (extended 3px each end to overlap adjacent sections)
+    pts[1][0] = GPoint(-hw_ce, -(cut_end + 3));
+    pts[1][1] = GPoint(-hw_ce + rail_ce, -(cut_end + 3));
+    pts[1][2] = GPoint(-hw_cs + rail_cs, -(cut_start - 3));
+    pts[1][3] = GPoint(-hw_cs, -(cut_start - 3));
+    paths[1] = gpath_create(&(GPathInfo){ .num_points = 4, .points = pts[1] });
+
+    // 2: Right rail (extended 3px each end to overlap adjacent sections)
+    pts[2][0] = GPoint(hw_ce - rail_ce, -(cut_end + 3));
+    pts[2][1] = GPoint(hw_ce, -(cut_end + 3));
+    pts[2][2] = GPoint(hw_cs, -(cut_start - 3));
+    pts[2][3] = GPoint(hw_cs - rail_cs, -(cut_start - 3));
+    paths[2] = gpath_create(&(GPathInfo){ .num_points = 4, .points = pts[2] });
+
+    // 3: Outer section
+    pts[3][0] = GPoint(-tip_w, -hand_len);
+    pts[3][1] = GPoint(tip_w, -hand_len);
+    pts[3][2] = GPoint(hw_ce, -cut_end);
+    pts[3][3] = GPoint(-hw_ce, -cut_end);
+    paths[3] = gpath_create(&(GPathInfo){ .num_points = 4, .points = pts[3] });
+
+    // 4: Full outline (base to tip)
+    pts[4][0] = GPoint(-tip_w, -hand_len);
+    pts[4][1] = GPoint(tip_w, -hand_len);
+    pts[4][2] = GPoint(hand_width, hand_tail);
+    pts[4][3] = GPoint(-hand_width, hand_tail);
+    paths[4] = gpath_create(&(GPathInfo){ .num_points = 4, .points = pts[4] });
+}
+
+static void create_static_paths(void) {
+    // Month indicators
+    int32_t m_rout = MONTH_RING_R + 5;
+    int32_t m_rin = MONTH_RING_R - 5;
+    int32_t m_hw = 5;
+    for (int i = 0; i < 12; i++) {
+        int hour = (i + 1) % 12;
+        int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
+        s_month_pts[i][0] = GPoint(s_center.x + trig_round(sa * m_rout + ca * m_hw),
+                                   s_center.y - trig_round(ca * m_rout - sa * m_hw));
+        s_month_pts[i][1] = GPoint(s_center.x + trig_round(sa * m_rout - ca * m_hw),
+                                   s_center.y - trig_round(ca * m_rout + sa * m_hw));
+        s_month_pts[i][2] = GPoint(s_center.x + trig_round(sa * m_rin - ca * m_hw),
+                                   s_center.y - trig_round(ca * m_rin + sa * m_hw));
+        s_month_pts[i][3] = GPoint(s_center.x + trig_round(sa * m_rin + ca * m_hw),
+                                   s_center.y - trig_round(ca * m_rin - sa * m_hw));
+        s_month_paths[i] = gpath_create(&(GPathInfo){ .num_points = 4, .points = s_month_pts[i] });
+    }
+
+    // Hour markers (skip 12 and 3 o'clock)
+    int32_t h_hw = 5;
+    int32_t h_rout = MARKER_OUTER_R;
+    int32_t h_rin = MARKER_INNER_R;
+    for (int i = 0; i < 12; i++) {
+        if (i == 0 || i == 3) {
+            s_marker_paths[i] = NULL;
+            continue;
+        }
+        int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
+        s_marker_pts[i][0] = GPoint(s_center.x + trig_round(sa * h_rout + ca * h_hw),
+                                    s_center.y - trig_round(ca * h_rout - sa * h_hw));
+        s_marker_pts[i][1] = GPoint(s_center.x + trig_round(sa * h_rout - ca * h_hw),
+                                    s_center.y - trig_round(ca * h_rout + sa * h_hw));
+        s_marker_pts[i][2] = GPoint(s_center.x + trig_round(sa * h_rin - ca * h_hw),
+                                    s_center.y - trig_round(ca * h_rin + sa * h_hw));
+        s_marker_pts[i][3] = GPoint(s_center.x + trig_round(sa * h_rin + ca * h_hw),
+                                    s_center.y - trig_round(ca * h_rin - sa * h_hw));
+        s_marker_paths[i] = gpath_create(&(GPathInfo){ .num_points = 4, .points = s_marker_pts[i] });
+    }
+
+    // "Made in" marks (unreadable, decorative rectangles flanking 6 o'clock)
+    int32_t bk_out = TICK_HALF_INNER_R - 1;
+    int32_t bk_in = TICK_MIN_INNER_R;
+    int32_t bk_hw = 10;
+    int bk_pos[] = { 64, 56 };
+    for (int m = 0; m < 2; m++) {
+        int32_t angle = (bk_pos[m] * TRIG_MAX_ANGLE) / 120;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
+        s_brand_pts[m][0] = GPoint(s_center.x + trig_round(sa * bk_out + ca * bk_hw),
+                                   s_center.y - trig_round(ca * bk_out - sa * bk_hw));
+        s_brand_pts[m][1] = GPoint(s_center.x + trig_round(sa * bk_out - ca * bk_hw),
+                                   s_center.y - trig_round(ca * bk_out + sa * bk_hw));
+        s_brand_pts[m][2] = GPoint(s_center.x + trig_round(sa * bk_in - ca * bk_hw),
+                                   s_center.y - trig_round(ca * bk_in + sa * bk_hw));
+        s_brand_pts[m][3] = GPoint(s_center.x + trig_round(sa * bk_in + ca * bk_hw),
+                                   s_center.y - trig_round(ca * bk_in - sa * bk_hw));
+        s_brand_paths[m] = gpath_create(&(GPathInfo){ .num_points = 4, .points = s_brand_pts[m] });
+    }
+
+    // GMT red/white triangle pointer
+    GPoint dc = GPoint(s_center.x, s_center.y + GMT_DISC_OFFSET_Y);
+    s_gmt_tri_pts[0] = GPoint(dc.x, dc.y - GMT_RING_OUTER - 1);
+    s_gmt_tri_pts[1] = GPoint(dc.x - 8, dc.y - GMT_RING_OUTER - 16);
+    s_gmt_tri_pts[2] = GPoint(dc.x + 8, dc.y - GMT_RING_OUTER - 16);
+    s_gmt_tri_path = gpath_create(&(GPathInfo){ .num_points = 3, .points = s_gmt_tri_pts });
+
+    s_gmt_tri_inner_pts[0] = GPoint(dc.x, dc.y - GMT_RING_OUTER - 4);
+    s_gmt_tri_inner_pts[1] = GPoint(dc.x - 5, dc.y - GMT_RING_OUTER - 14);
+    s_gmt_tri_inner_pts[2] = GPoint(dc.x + 5, dc.y - GMT_RING_OUTER - 14);
+    s_gmt_tri_inner_path = gpath_create(&(GPathInfo){ .num_points = 3, .points = s_gmt_tri_inner_pts });
+}
+
+static void destroy_all_paths(void) {
+    for (int i = 0; i < 12; i++) {
+        if (s_month_paths[i]) { gpath_destroy(s_month_paths[i]); s_month_paths[i] = NULL; }
+        if (s_marker_paths[i]) { gpath_destroy(s_marker_paths[i]); s_marker_paths[i] = NULL; }
+    }
+    for (int i = 0; i < 2; i++) {
+        if (s_brand_paths[i]) { gpath_destroy(s_brand_paths[i]); s_brand_paths[i] = NULL; }
+    }
+    if (s_gmt_tri_path) { gpath_destroy(s_gmt_tri_path); s_gmt_tri_path = NULL; }
+    if (s_gmt_tri_inner_path) { gpath_destroy(s_gmt_tri_inner_path); s_gmt_tri_inner_path = NULL; }
+    for (int i = 0; i < HAND_PARTS; i++) {
+        if (s_hour_hand[i]) { gpath_destroy(s_hour_hand[i]); s_hour_hand[i] = NULL; }
+        if (s_min_hand[i]) { gpath_destroy(s_min_hand[i]); s_min_hand[i] = NULL; }
+    }
 }
 
 // ============================================================================
@@ -126,36 +300,13 @@ static void draw_minute_track(GContext *ctx) {
 // ============================================================================
 
 static void draw_month_indicators(GContext *ctx, int current_month) {
-    int32_t r_out = MONTH_RING_R + 5;
-    int32_t r_in = MONTH_RING_R - 5;
-    int32_t hw = 5;
-
     for (int i = 0; i < 12; i++) {
-        int hour = (i + 1) % 12;
-        int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
-        int32_t sa = sin_lookup(angle);
-        int32_t ca = cos_lookup(angle);
-
-        GPoint pts[4];
-        pts[0] = GPoint(s_center.x + trig_round(sa * r_out + ca * hw),
-                        s_center.y - trig_round(ca * r_out - sa * hw));
-        pts[1] = GPoint(s_center.x + trig_round(sa * r_out - ca * hw),
-                        s_center.y - trig_round(ca * r_out + sa * hw));
-        pts[2] = GPoint(s_center.x + trig_round(sa * r_in - ca * hw),
-                        s_center.y - trig_round(ca * r_in + sa * hw));
-        pts[3] = GPoint(s_center.x + trig_round(sa * r_in + ca * hw),
-                        s_center.y - trig_round(ca * r_in - sa * hw));
-
         graphics_context_set_fill_color(ctx,
             (i == current_month) ? GColorRed : GColorWhite);
-
-        GPathInfo info = { .num_points = 4, .points = pts };
-        GPath *path = gpath_create(&info);
-        gpath_draw_filled(ctx, path);
+        gpath_draw_filled(ctx, s_month_paths[i]);
         graphics_context_set_stroke_color(ctx, GColorPictonBlue);
         graphics_context_set_stroke_width(ctx, 1);
-        gpath_draw_outline(ctx, path);
-        gpath_destroy(path);
+        gpath_draw_outline(ctx, s_month_paths[i]);
     }
 }
 
@@ -167,33 +318,11 @@ static void draw_hour_markers(GContext *ctx) {
     graphics_context_set_fill_color(ctx, GColorWhite);
 
     for (int i = 0; i < 12; i++) {
-        if (i == 0 || i == 3) continue;
-
-        int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
-        int32_t sa = sin_lookup(angle);
-        int32_t ca = cos_lookup(angle);
-        int32_t hw = 5;
-        int32_t r_out = MARKER_OUTER_R;
-        int32_t r_in = MARKER_INNER_R;
-
-        // Compute each vertex in one trig_round to minimize rounding error
-        GPoint pts[4];
-        pts[0] = GPoint(s_center.x + trig_round(sa * r_out + ca * hw),
-                        s_center.y - trig_round(ca * r_out - sa * hw));
-        pts[1] = GPoint(s_center.x + trig_round(sa * r_out - ca * hw),
-                        s_center.y - trig_round(ca * r_out + sa * hw));
-        pts[2] = GPoint(s_center.x + trig_round(sa * r_in - ca * hw),
-                        s_center.y - trig_round(ca * r_in + sa * hw));
-        pts[3] = GPoint(s_center.x + trig_round(sa * r_in + ca * hw),
-                        s_center.y - trig_round(ca * r_in - sa * hw));
-
-        GPathInfo info = { .num_points = 4, .points = pts };
-        GPath *path = gpath_create(&info);
-        gpath_draw_filled(ctx, path);
+        if (!s_marker_paths[i]) continue;
+        gpath_draw_filled(ctx, s_marker_paths[i]);
         graphics_context_set_stroke_color(ctx, GColorLightGray);
         graphics_context_set_stroke_width(ctx, 1);
-        gpath_draw_outline(ctx, path);
-        gpath_destroy(path);
+        gpath_draw_outline(ctx, s_marker_paths[i]);
     }
 }
 
@@ -275,29 +404,11 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes, int seconds) 
         graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     }
 
-    // Red inverted triangle pointer above the ring
-    GPoint tri_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 1),
-        GPoint(disc_center.x - 8, disc_center.y - GMT_RING_OUTER - 16),
-        GPoint(disc_center.x + 8, disc_center.y - GMT_RING_OUTER - 16)
-    };
+    // Red/white triangle pointer (pre-allocated paths)
     graphics_context_set_fill_color(ctx, GColorRed);
-    GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
-    GPath *tri_path = gpath_create(&tri_info);
-    gpath_draw_filled(ctx, tri_path);
-    gpath_destroy(tri_path);
-
-    // White inner triangle — proportional 2px inset
-    GPoint inner_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 4),
-        GPoint(disc_center.x - 5, disc_center.y - GMT_RING_OUTER - 14),
-        GPoint(disc_center.x + 5, disc_center.y - GMT_RING_OUTER - 14)
-    };
+    gpath_draw_filled(ctx, s_gmt_tri_path);
     graphics_context_set_fill_color(ctx, GColorWhite);
-    GPathInfo inner_info = { .num_points = 3, .points = inner_pts };
-    GPath *inner_path = gpath_create(&inner_info);
-    gpath_draw_filled(ctx, inner_path);
-    gpath_destroy(inner_path);
+    gpath_draw_filled(ctx, s_gmt_tri_inner_path);
 }
 
 // ============================================================================
@@ -378,32 +489,9 @@ static void draw_brand_text(GContext *ctx) {
         brand_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
     // "SFCA MADE" at bottom — gibberish marks replacing shortened ticks
-    // Uses same vertex computation as hour markers / month indicators
     graphics_context_set_fill_color(ctx, GColorWhite);
-    int32_t mark_out = TICK_HALF_INNER_R - 1;
-    int32_t mark_in = TICK_MIN_INNER_R;
-
-    int sfca_made[] = { 64, 56 };  // positions: minute 32, minute 28
     for (int m = 0; m < 2; m++) {
-        int32_t angle = (sfca_made[m] * TRIG_MAX_ANGLE) / 120;
-        int32_t sa = sin_lookup(angle);
-        int32_t ca = cos_lookup(angle);
-        int32_t hw = 10;
-
-        GPoint pts[4];
-        pts[0] = GPoint(s_center.x + trig_round(sa * mark_out + ca * hw),
-                        s_center.y - trig_round(ca * mark_out - sa * hw));
-        pts[1] = GPoint(s_center.x + trig_round(sa * mark_out - ca * hw),
-                        s_center.y - trig_round(ca * mark_out + sa * hw));
-        pts[2] = GPoint(s_center.x + trig_round(sa * mark_in - ca * hw),
-                        s_center.y - trig_round(ca * mark_in + sa * hw));
-        pts[3] = GPoint(s_center.x + trig_round(sa * mark_in + ca * hw),
-                        s_center.y - trig_round(ca * mark_in - sa * hw));
-
-        GPathInfo info = { .num_points = 4, .points = pts };
-        GPath *p = gpath_create(&info);
-        gpath_draw_filled(ctx, p);
-        gpath_destroy(p);
+        gpath_draw_filled(ctx, s_brand_paths[m]);
     }
 }
 
@@ -411,86 +499,28 @@ static void draw_brand_text(GContext *ctx) {
 // DRAW: Clock hands
 // ============================================================================
 
-static void draw_hand(GContext *ctx, int32_t angle, int lume_width,
-                      int hand_len, int hand_width, int hand_tail) {
-    int tip_w = hand_width - 2;
-    int total = hand_tail + hand_len;
-    int cut_start = 18;
-    int cut_end = hand_len / 2 - 3;
+static void draw_hand(GContext *ctx, GPath **paths, int32_t angle,
+                      int lume_width, int hand_len) {
     int lume_start_r = hand_len / 2 + 3;
-    // Half-width at cutout boundaries (linear taper)
-    int hw_cs = hand_width - 2 * (cut_start + hand_tail) / total;
-    int hw_ce = hand_width - 2 * (cut_end + hand_tail) / total;
 
-    // Rail width = hand edge minus lume half-width (cutout matches lume width)
-    int rail_cs = hw_cs - lume_width;
-    int rail_ce = hw_ce - lume_width;
+    // Rotate and position all pre-allocated sections
+    for (int i = 0; i < HAND_PARTS; i++) {
+        gpath_rotate_to(paths[i], angle);
+        gpath_move_to(paths[i], s_center);
+    }
 
+    // Fill sections: base, left rail, right rail, outer
     graphics_context_set_fill_color(ctx, GColorLightGray);
+    for (int i = 0; i < HAND_PARTS - 1; i++) {
+        gpath_draw_filled(ctx, paths[i]);
+    }
 
-    // 1. Base section fill
-    GPoint bp[4] = {
-        GPoint(-hw_cs, -cut_start), GPoint(hw_cs, -cut_start),
-        GPoint(hand_width, hand_tail), GPoint(-hand_width, hand_tail)
-    };
-    GPathInfo bi = { .num_points = 4, .points = bp };
-    GPath *base = gpath_create(&bi);
-    gpath_rotate_to(base, angle);
-    gpath_move_to(base, s_center);
-    gpath_draw_filled(ctx, base);
-    gpath_destroy(base);
-
-    // 2. Left rail fill through cutout (extended 3px each end to overlap sections)
-    GPoint lp[4] = {
-        GPoint(-hw_ce, -(cut_end + 3)), GPoint(-hw_ce + rail_ce, -(cut_end + 3)),
-        GPoint(-hw_cs + rail_cs, -(cut_start - 3)), GPoint(-hw_cs, -(cut_start - 3))
-    };
-    GPathInfo li = { .num_points = 4, .points = lp };
-    GPath *lrail = gpath_create(&li);
-    gpath_rotate_to(lrail, angle);
-    gpath_move_to(lrail, s_center);
-    gpath_draw_filled(ctx, lrail);
-    gpath_destroy(lrail);
-
-    // 3. Right rail fill through cutout (extended 3px each end to overlap sections)
-    GPoint rp[4] = {
-        GPoint(hw_ce - rail_ce, -(cut_end + 3)), GPoint(hw_ce, -(cut_end + 3)),
-        GPoint(hw_cs, -(cut_start - 3)), GPoint(hw_cs - rail_cs, -(cut_start - 3))
-    };
-    GPathInfo ri = { .num_points = 4, .points = rp };
-    GPath *rrail = gpath_create(&ri);
-    gpath_rotate_to(rrail, angle);
-    gpath_move_to(rrail, s_center);
-    gpath_draw_filled(ctx, rrail);
-    gpath_destroy(rrail);
-
-    // 4. Outer section fill
-    GPoint op[4] = {
-        GPoint(-tip_w, -hand_len), GPoint(tip_w, -hand_len),
-        GPoint(hw_ce, -cut_end), GPoint(-hw_ce, -cut_end)
-    };
-    GPathInfo oi = { .num_points = 4, .points = op };
-    GPath *outer = gpath_create(&oi);
-    gpath_rotate_to(outer, angle);
-    gpath_move_to(outer, s_center);
-    gpath_draw_filled(ctx, outer);
-    gpath_destroy(outer);
-
-    // 5. Full hand outline — continuous dark grey edge from base to tip
-    GPoint fp[4] = {
-        GPoint(-tip_w, -hand_len), GPoint(tip_w, -hand_len),
-        GPoint(hand_width, hand_tail), GPoint(-hand_width, hand_tail)
-    };
-    GPathInfo fi = { .num_points = 4, .points = fp };
-    GPath *full = gpath_create(&fi);
-    gpath_rotate_to(full, angle);
-    gpath_move_to(full, s_center);
+    // Full hand outline — continuous dark grey edge from base to tip
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
-    gpath_draw_outline(ctx, full);
-    gpath_destroy(full);
+    gpath_draw_outline(ctx, paths[4]);
 
-    // 6. Luminous strip on outer section
+    // Luminous strip on outer section
     GPoint ls = point_on_circle(s_center, lume_start_r, angle);
     GPoint le = point_on_circle(s_center, hand_len - 6, angle);
     graphics_context_set_stroke_color(ctx, GColorWhite);
@@ -504,41 +534,52 @@ static void draw_hands(GContext *ctx, struct tm *t) {
                          (t->tm_sec * TRIG_MAX_ANGLE / 12 / 3600);
     int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60) +
                          (t->tm_sec * TRIG_MAX_ANGLE / 60 / 60);
-    int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
-
     // Draw order: hour (bottom), minute, seconds (top)
-    draw_hand(ctx, hour_angle, 3, HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL);
-    draw_hand(ctx, min_angle, 3, MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL);
+    draw_hand(ctx, s_hour_hand, hour_angle, 3, HOUR_HAND_LEN);
+    draw_hand(ctx, s_min_hand, min_angle, 3, MIN_HAND_LEN);
 
-    // Seconds hand — tapered from 3px at center to 1px at tip
-    GPoint sec_tip = point_on_circle(s_center, SEC_HAND_LEN, sec_angle);
-    GPoint sec_mid = point_on_circle(s_center, SEC_HAND_LEN / 2, sec_angle);
-    GPoint sec_tail = point_on_circle(s_center, SEC_HAND_TAIL,
-                                      sec_angle + TRIG_MAX_ANGLE / 2);
+    if (s_seconds_active) {
+        int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
 
-    // Thick inner portion (tail to midpoint)
-    graphics_context_set_stroke_color(ctx, GColorLightGray);
-    graphics_context_set_stroke_width(ctx, 3);
-    graphics_draw_line(ctx, sec_tail, sec_mid);
+        // Seconds hand — tapered from 3px at center to 2px at tip
+        GPoint sec_tip = point_on_circle(s_center, SEC_HAND_LEN, sec_angle);
+        GPoint sec_mid = point_on_circle(s_center, SEC_HAND_LEN / 2, sec_angle);
+        GPoint sec_tail = point_on_circle(s_center, SEC_HAND_TAIL,
+                                          sec_angle + TRIG_MAX_ANGLE / 2);
 
-    // Slightly thinner outer portion (midpoint to tip)
-    graphics_context_set_stroke_width(ctx, 2);
-    graphics_draw_line(ctx, sec_mid, sec_tip);
+        // Thick inner portion (tail to midpoint)
+        graphics_context_set_stroke_color(ctx, GColorLightGray);
+        graphics_context_set_stroke_width(ctx, 3);
+        graphics_draw_line(ctx, sec_tail, sec_mid);
 
-    // Center pivot — outline leaves gaps where the seconds hand passes through
-    graphics_context_set_fill_color(ctx, GColorLightGray);
-    graphics_fill_circle(ctx, s_center, 7);
-    graphics_context_set_stroke_color(ctx, GColorDarkGray);
-    graphics_context_set_stroke_width(ctx, 1);
-    int32_t gap = TRIG_MAX_ANGLE * 15 / 360;  // 15° half-gap covers 3px hand width
-    GRect pivot_rect = GRect(s_center.x - 7, s_center.y - 7, 15, 15);
-    graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
-                      sec_angle + gap, sec_angle + TRIG_MAX_ANGLE / 2 - gap);
-    graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
-                      sec_angle + TRIG_MAX_ANGLE / 2 + gap,
-                      sec_angle + TRIG_MAX_ANGLE - gap);
-    graphics_context_set_fill_color(ctx, GColorDarkGray);
-    graphics_fill_circle(ctx, s_center, 2);
+        // Slightly thinner outer portion (midpoint to tip)
+        graphics_context_set_stroke_width(ctx, 2);
+        graphics_draw_line(ctx, sec_mid, sec_tip);
+
+        // Center pivot — outline leaves gaps where the seconds hand passes through
+        graphics_context_set_fill_color(ctx, GColorLightGray);
+        graphics_fill_circle(ctx, s_center, 7);
+        graphics_context_set_stroke_color(ctx, GColorDarkGray);
+        graphics_context_set_stroke_width(ctx, 1);
+        int32_t gap = TRIG_MAX_ANGLE * 15 / 360;
+        GRect pivot_rect = GRect(s_center.x - 7, s_center.y - 7, 15, 15);
+        graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
+                          sec_angle + gap, sec_angle + TRIG_MAX_ANGLE / 2 - gap);
+        graphics_draw_arc(ctx, pivot_rect, GOvalScaleModeFitCircle,
+                          sec_angle + TRIG_MAX_ANGLE / 2 + gap,
+                          sec_angle + TRIG_MAX_ANGLE - gap);
+        graphics_context_set_fill_color(ctx, GColorDarkGray);
+        graphics_fill_circle(ctx, s_center, 2);
+    } else {
+        // Plain pivot (no seconds hand)
+        graphics_context_set_fill_color(ctx, GColorLightGray);
+        graphics_fill_circle(ctx, s_center, 7);
+        graphics_context_set_stroke_color(ctx, GColorDarkGray);
+        graphics_context_set_stroke_width(ctx, 1);
+        graphics_draw_circle(ctx, s_center, 7);
+        graphics_context_set_fill_color(ctx, GColorDarkGray);
+        graphics_fill_circle(ctx, s_center, 2);
+    }
 }
 
 // ============================================================================
@@ -565,16 +606,87 @@ static void show_battery(void) {
     }
 }
 
-static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
-    show_battery();
+// ============================================================================
+// SECONDS HAND AUTO-DISABLE
+// ============================================================================
+
+static void tick_handler(struct tm *tick_time, TimeUnits units_changed);
+
+static void seconds_timeout_callback(void *data) {
+    s_seconds_active = false;
+    s_seconds_timer = NULL;
+    tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+    if (s_canvas_layer) {
+        layer_mark_dirty(s_canvas_layer);
+    }
 }
 
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-    show_battery();
+static void activate_seconds(void) {
+    if (!s_seconds_active) {
+        s_seconds_active = true;
+        tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+        if (s_canvas_layer) {
+            layer_mark_dirty(s_canvas_layer);
+        }
+    }
+    if (s_seconds_timer) {
+        app_timer_reschedule(s_seconds_timer, SECONDS_TIMEOUT_MS);
+    } else {
+        s_seconds_timer = app_timer_register(SECONDS_TIMEOUT_MS,
+                                             seconds_timeout_callback, NULL);
+    }
 }
 
-static void click_config_provider(void *context) {
-    window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
+static void accel_data_handler(AccelData *data, uint32_t num_samples) {
+    if (num_samples < 2) return;
+
+    // Find first non-vibrating sample to seed min/max
+    uint32_t start = 0;
+    while (start < num_samples && data[start].did_vibrate) start++;
+    if (start >= num_samples) return;
+
+    int16_t x_min = data[start].x, x_max = data[start].x;
+    int16_t y_min = data[start].y, y_max = data[start].y;
+    int16_t z_min = data[start].z, z_max = data[start].z;
+    bool tap_detected = false;
+    uint32_t last_valid = start;
+
+    for (uint32_t i = start + 1; i < num_samples; i++) {
+        if (data[i].did_vibrate) continue;
+
+        if (data[i].x < x_min) x_min = data[i].x;
+        if (data[i].x > x_max) x_max = data[i].x;
+        if (data[i].y < y_min) y_min = data[i].y;
+        if (data[i].y > y_max) y_max = data[i].y;
+        if (data[i].z < z_min) z_min = data[i].z;
+        if (data[i].z > z_max) z_max = data[i].z;
+
+        // Detect tap: sharp delta between consecutive valid samples
+        if (!tap_detected) {
+            int16_t dx = data[i].x - data[last_valid].x;
+            int16_t dy = data[i].y - data[last_valid].y;
+            int16_t dz = data[i].z - data[last_valid].z;
+            if (dx > 300 || dx < -300 ||
+                dy > 300 || dy < -300 ||
+                dz > 300 || dz < -300) {
+                tap_detected = true;
+            }
+        }
+
+        last_valid = i;
+    }
+
+    // Motion: any axis range > 50 milli-g across the batch
+    if ((x_max - x_min > 50) ||
+        (y_max - y_min > 50) ||
+        (z_max - z_min > 50)) {
+        activate_seconds();
+    }
+
+    // Sharp tap: show battery level
+    if (tap_detected) {
+        show_battery();
+    }
 }
 
 // ============================================================================
@@ -643,6 +755,13 @@ static void main_window_load(Window *window) {
 
     s_gmt_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GMT_DISC);
 
+    // Pre-allocate all GPath objects
+    create_static_paths();
+    create_hand_paths(s_hour_hand, s_hour_pts,
+                      HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL, 3);
+    create_hand_paths(s_min_hand, s_min_pts,
+                      MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL, 3);
+
     // Signal Quick View awareness (no-op — we let the overlay render on top)
     UnobstructedAreaHandlers ua_handlers = { 0 };
     unobstructed_area_service_subscribe(ua_handlers, NULL);
@@ -650,6 +769,7 @@ static void main_window_load(Window *window) {
 
 static void main_window_unload(Window *window) {
     unobstructed_area_service_unsubscribe();
+    destroy_all_paths();
     if (s_gmt_bitmap) { gbitmap_destroy(s_gmt_bitmap); s_gmt_bitmap = NULL; }
     if (s_canvas_layer) { layer_destroy(s_canvas_layer); s_canvas_layer = NULL; }
 }
@@ -664,15 +784,17 @@ static void init(void) {
         .load = main_window_load,
         .unload = main_window_unload
     });
-    window_set_click_config_provider(s_main_window, click_config_provider);
     window_stack_push(s_main_window, true);
     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-    accel_tap_service_subscribe(accel_tap_handler);
+    accel_data_service_subscribe(25, accel_data_handler);
+    accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
+    activate_seconds();  // Start auto-disable timer
 }
 
 static void deinit(void) {
-    accel_tap_service_unsubscribe();
+    accel_data_service_unsubscribe();
     if (s_battery_timer) { app_timer_cancel(s_battery_timer); s_battery_timer = NULL; }
+    if (s_seconds_timer) { app_timer_cancel(s_seconds_timer); s_seconds_timer = NULL; }
     tick_timer_service_unsubscribe();
     if (s_main_window) { window_destroy(s_main_window); s_main_window = NULL; }
 }
