@@ -47,18 +47,17 @@ for fp in [
 if font is None:
     font = ImageFont.load_default()
 
-# Tick marks at odd hours
+# Dots at odd hours
+DOT_R = GMT_NUM_R * SCALE
+DOT_SIZE = 2 * SCALE
 for h in range(0, 24):
     if h % 2 == 0:
         continue
     angle_rad = math.radians(h * 360 / 24)
-    tick_r1 = (GMT_NUM_R - 5) * SCALE
-    tick_r2 = (GMT_NUM_R + 5) * SCALE
-    x1 = CENTER + tick_r1 * math.sin(angle_rad)
-    y1 = CENTER - tick_r1 * math.cos(angle_rad)
-    x2 = CENTER + tick_r2 * math.sin(angle_rad)
-    y2 = CENTER - tick_r2 * math.cos(angle_rad)
-    draw.line([(x1, y1), (x2, y2)], fill=(255, 255, 255, 200), width=SCALE)
+    x = CENTER + DOT_R * math.sin(angle_rad)
+    y = CENTER - DOT_R * math.cos(angle_rad)
+    draw.ellipse([(x - DOT_SIZE, y - DOT_SIZE), (x + DOT_SIZE, y + DOT_SIZE)],
+                 fill=(255, 255, 255, 255))
 
 # Numbers at even hours, each rotated radially
 for h in range(0, 24, 2):

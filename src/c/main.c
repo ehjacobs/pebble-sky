@@ -23,8 +23,7 @@
 #define MINUTE_TRACK_OUTER 115
 #define MINUTE_TRACK_INNER 112
 #define MARKER_OUTER_R     109
-#define MARKER_INNER_R      91
-#define MARKER_INNER_R_QTR  83
+#define MARKER_INNER_R      83
 
 // GMT ring (off-center 24-hour annulus, shifted below dial center)
 #define GMT_DISC_OFFSET_Y   26
@@ -126,27 +125,33 @@ static void draw_minute_track(GContext *ctx) {
 // ============================================================================
 
 static void draw_month_indicators(GContext *ctx, int current_month) {
-    GPoint sq_pts[4];
-    GPathInfo sq_info = { .num_points = 4, .points = sq_pts };
-
-    // Define square at 12 o'clock, then rotate to each position
-    sq_pts[0] = GPoint(-5, -(MONTH_RING_R + 5));
-    sq_pts[1] = GPoint( 5, -(MONTH_RING_R + 5));
-    sq_pts[2] = GPoint( 5, -(MONTH_RING_R - 5));
-    sq_pts[3] = GPoint(-5, -(MONTH_RING_R - 5));
+    int32_t r_out = MONTH_RING_R + 5;
+    int32_t r_in = MONTH_RING_R - 5;
+    int32_t hw = 5;
 
     for (int i = 0; i < 12; i++) {
         int hour = (i + 1) % 12;
         int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
 
-        GPath *sq_path = gpath_create(&sq_info);
-        gpath_rotate_to(sq_path, angle);
-        gpath_move_to(sq_path, s_center);
+        GPoint pts[4];
+        pts[0] = GPoint(s_center.x + trig_round(sa * r_out + ca * hw),
+                        s_center.y - trig_round(ca * r_out - sa * hw));
+        pts[1] = GPoint(s_center.x + trig_round(sa * r_out - ca * hw),
+                        s_center.y - trig_round(ca * r_out + sa * hw));
+        pts[2] = GPoint(s_center.x + trig_round(sa * r_in - ca * hw),
+                        s_center.y - trig_round(ca * r_in + sa * hw));
+        pts[3] = GPoint(s_center.x + trig_round(sa * r_in + ca * hw),
+                        s_center.y - trig_round(ca * r_in - sa * hw));
 
         graphics_context_set_fill_color(ctx,
             (i == current_month) ? GColorRed : GColorWhite);
-        gpath_draw_filled(ctx, sq_path);
-        gpath_destroy(sq_path);
+
+        GPathInfo info = { .num_points = 4, .points = pts };
+        GPath *path = gpath_create(&info);
+        gpath_draw_filled(ctx, path);
+        gpath_destroy(path);
     }
 }
 
@@ -163,7 +168,7 @@ static void draw_hour_markers(GContext *ctx) {
         int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
         int32_t sa = sin_lookup(angle);
         int32_t ca = cos_lookup(angle);
-        int32_t hw = 3;
+        int32_t hw = 5;
         int32_t r_out = MARKER_OUTER_R;
         int32_t r_in = MARKER_INNER_R;
 
