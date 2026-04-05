@@ -33,10 +33,10 @@
 #define GMT_NUM_R           61
 
 // Hand dimensions
-#define HOUR_HAND_LEN       70
+#define HOUR_HAND_LEN       80
 #define HOUR_HAND_WIDTH     11
 #define HOUR_HAND_TAIL      17
-#define MIN_HAND_LEN       102
+#define MIN_HAND_LEN       119
 #define MIN_HAND_WIDTH       7
 #define MIN_HAND_TAIL       20
 #define SEC_HAND_LEN       110
@@ -58,23 +58,22 @@ static GPath *s_hour_path;
 static GPath *s_min_path;
 static GBitmap *s_gmt_bitmap;
 
-static GPoint s_hour_pts[6];
-static GPoint s_min_pts[6];
+static GPoint s_hour_pts[4];
+static GPoint s_min_pts[4];
 
-static GPathInfo s_hour_info = { .num_points = 6, .points = s_hour_pts };
-static GPathInfo s_min_info  = { .num_points = 6, .points = s_min_pts };
+static GPathInfo s_hour_info = { .num_points = 4, .points = s_hour_pts };
+static GPathInfo s_min_info  = { .num_points = 4, .points = s_min_pts };
 
 // ============================================================================
-// HAND GEOMETRY — flat-tipped baton with luminous center strip
+// HAND GEOMETRY — gradually tapered baton (Sky-Dweller style)
 // ============================================================================
 
 static void init_hand_points(GPoint *pts, int length, int width, int tail) {
-    pts[0] = GPoint(-(width - 2), -length);       // tip left (tapered)
-    pts[1] = GPoint(width - 2, -length);           // tip right
-    pts[2] = GPoint(width, -length + 8);           // right shoulder
-    pts[3] = GPoint(width, tail);                  // right base
-    pts[4] = GPoint(-width, tail);                 // left base
-    pts[5] = GPoint(-width, -length + 8);          // left shoulder
+    int tip_w = width - 2;  // subtle taper: slightly narrower at tip
+    pts[0] = GPoint(-tip_w, -length);      // tip left
+    pts[1] = GPoint( tip_w, -length);      // tip right
+    pts[2] = GPoint( width,  tail);        // base right (full width)
+    pts[3] = GPoint(-width,  tail);        // base left
 }
 
 // ============================================================================
@@ -313,7 +312,7 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
 // ============================================================================
 
 static void draw_date_window(GContext *ctx, int mday) {
-    int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2;
+    int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - 2;
     int cy = s_center.y;
     int date_w = 26;
     int date_h = 18;
@@ -379,9 +378,16 @@ static void draw_hand(GContext *ctx, GPath *path, int32_t angle,
     graphics_context_set_stroke_width(ctx, 1);
     gpath_draw_outline(ctx, path);
 
-    // Luminous center strip
-    GPoint lume_end = point_on_circle(s_center, hand_len - 8, angle);
-    GPoint lume_start = point_on_circle(s_center, 14, angle);
+    // Skeleton cutout — rectangular opening showing dial through hand
+    GPoint cut_start = point_on_circle(s_center, 18, angle);
+    GPoint cut_end = point_on_circle(s_center, hand_len / 2 - 3, angle);
+    graphics_context_set_stroke_color(ctx, GColorDukeBlue);
+    graphics_context_set_stroke_width(ctx, lume_width);
+    graphics_draw_line(ctx, cut_start, cut_end);
+
+    // Luminous strip — outer portion only (grey bridge visible between)
+    GPoint lume_start = point_on_circle(s_center, hand_len / 2 + 3, angle);
+    GPoint lume_end = point_on_circle(s_center, hand_len - 6, angle);
     graphics_context_set_stroke_color(ctx, GColorWhite);
     graphics_context_set_stroke_width(ctx, lume_width);
     graphics_draw_line(ctx, lume_start, lume_end);
@@ -413,10 +419,13 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     graphics_draw_line(ctx, sec_mid, sec_tip);
 
     // Center pivot
-    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_fill_color(ctx, GColorLightGray);
     graphics_fill_circle(ctx, s_center, 7);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_circle(ctx, s_center, 7);
     graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_circle(ctx, s_center, 3);
+    graphics_fill_circle(ctx, s_center, 2);
 }
 
 // ============================================================================
