@@ -126,31 +126,27 @@ static void draw_minute_track(GContext *ctx) {
 // ============================================================================
 
 static void draw_month_indicators(GContext *ctx, int current_month) {
-    GPoint rect_pts[4];
-    GPathInfo rect_info = { .num_points = 4, .points = rect_pts };
+    GPoint sq_pts[4];
+    GPathInfo sq_info = { .num_points = 4, .points = sq_pts };
+
+    // Define square at 12 o'clock, then rotate to each position
+    sq_pts[0] = GPoint(-5, -(MONTH_RING_R + 5));
+    sq_pts[1] = GPoint( 5, -(MONTH_RING_R + 5));
+    sq_pts[2] = GPoint( 5, -(MONTH_RING_R - 5));
+    sq_pts[3] = GPoint(-5, -(MONTH_RING_R - 5));
 
     for (int i = 0; i < 12; i++) {
         int hour = (i + 1) % 12;
         int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
 
-        GPoint inner = point_on_circle(s_center, MONTH_RING_R - 5, angle);
-        GPoint outer = point_on_circle(s_center, MONTH_RING_R + 5, angle);
-
-        int32_t perp_angle = angle + TRIG_MAX_ANGLE / 4;
-        int16_t dx = (int16_t)((sin_lookup(perp_angle) * 5) / TRIG_MAX_RATIO);
-        int16_t dy = (int16_t)(-(cos_lookup(perp_angle) * 5) / TRIG_MAX_RATIO);
-
-        rect_pts[0] = GPoint(outer.x + dx, outer.y + dy);
-        rect_pts[1] = GPoint(outer.x - dx, outer.y - dy);
-        rect_pts[2] = GPoint(inner.x - dx, inner.y - dy);
-        rect_pts[3] = GPoint(inner.x + dx, inner.y + dy);
+        GPath *sq_path = gpath_create(&sq_info);
+        gpath_rotate_to(sq_path, angle);
+        gpath_move_to(sq_path, s_center);
 
         graphics_context_set_fill_color(ctx,
             (i == current_month) ? GColorRed : GColorWhite);
-
-        GPath *rect_path = gpath_create(&rect_info);
-        gpath_draw_filled(ctx, rect_path);
-        gpath_destroy(rect_path);
+        gpath_draw_filled(ctx, sq_path);
+        gpath_destroy(sq_path);
     }
 }
 
@@ -159,34 +155,29 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
 // ============================================================================
 
 static void draw_hour_markers(GContext *ctx) {
-    GPoint rect_pts[4];
-    GPathInfo rect_info = { .num_points = 4, .points = rect_pts };
+    GPoint baton_pts[4];
+    GPathInfo baton_info = { .num_points = 4, .points = baton_pts };
 
     for (int i = 0; i < 12; i++) {
         if (i == 0 || i == 3) continue;
 
         int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
-        int inner_r = (i % 3 == 0) ? MARKER_INNER_R_QTR : MARKER_INNER_R;
-        int half_w = (i % 3 == 0) ? 4 : 3;
+        // Angled markers appear thinner due to antialiasing; compensate
+        int half_w = (i == 6 || i == 9) ? 3 : 4;
 
-        GPoint inner = point_on_circle(s_center, inner_r, angle);
-        GPoint outer = point_on_circle(s_center, MARKER_OUTER_R, angle);
+        // Define baton at 12 o'clock, then rotate to position
+        baton_pts[0] = GPoint(-half_w, -MARKER_OUTER_R);
+        baton_pts[1] = GPoint( half_w, -MARKER_OUTER_R);
+        baton_pts[2] = GPoint( half_w, -MARKER_INNER_R);
+        baton_pts[3] = GPoint(-half_w, -MARKER_INNER_R);
 
-        int32_t perp_angle = angle + TRIG_MAX_ANGLE / 4;
-        int32_t dx_raw = sin_lookup(perp_angle) * half_w;
-        int32_t dy_raw = -cos_lookup(perp_angle) * half_w;
-        int16_t dx = (int16_t)((dx_raw + (dx_raw > 0 ? TRIG_MAX_RATIO/2 : -TRIG_MAX_RATIO/2)) / TRIG_MAX_RATIO);
-        int16_t dy = (int16_t)((dy_raw + (dy_raw > 0 ? TRIG_MAX_RATIO/2 : -TRIG_MAX_RATIO/2)) / TRIG_MAX_RATIO);
-
-        rect_pts[0] = GPoint(outer.x + dx, outer.y + dy);
-        rect_pts[1] = GPoint(outer.x - dx, outer.y - dy);
-        rect_pts[2] = GPoint(inner.x - dx, inner.y - dy);
-        rect_pts[3] = GPoint(inner.x + dx, inner.y + dy);
+        GPath *baton_path = gpath_create(&baton_info);
+        gpath_rotate_to(baton_path, angle);
+        gpath_move_to(baton_path, s_center);
 
         graphics_context_set_fill_color(ctx, GColorWhite);
-        GPath *rect_path = gpath_create(&rect_info);
-        gpath_draw_filled(ctx, rect_path);
-        gpath_destroy(rect_path);
+        gpath_draw_filled(ctx, baton_path);
+        gpath_destroy(baton_path);
     }
 }
 
