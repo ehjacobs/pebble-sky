@@ -14,18 +14,18 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 # Must match constants in main.c
-GMT_RING_OUTER = 49
+GMT_RING_OUTER = 51
 GMT_RING_INNER = 35
-GMT_NUM_R = 42
+GMT_NUM_R = 43
 
 # Render at 2x then downscale for cleaner edges
 SCALE = 2
-FINAL_SIZE = 2 * GMT_RING_OUTER + 6  # 104
+FINAL_SIZE = 2 * GMT_RING_OUTER + 6  # 108
 SIZE = FINAL_SIZE * SCALE
 CENTER = SIZE // 2
 NUM_R = GMT_NUM_R * SCALE
-TICK_INNER = (GMT_RING_INNER + 2) * SCALE
-TICK_OUTER = (GMT_RING_OUTER - 4) * SCALE
+DOT_R = GMT_NUM_R * SCALE
+DOT_SIZE = 2 * SCALE
 
 out_dir = os.path.join(os.path.dirname(__file__), '..', 'resources')
 os.makedirs(out_dir, exist_ok=True)
@@ -50,8 +50,6 @@ if font is None:
     font = ImageFont.load_default()
 
 # Dots between numbers at odd hours
-DOT_R = GMT_NUM_R * SCALE  # Same radius as numbers
-DOT_SIZE = 2 * SCALE
 for h in range(0, 24):
     if h % 2 == 0:
         continue
@@ -92,7 +90,7 @@ for h in range(0, 24, 2):
     paste_y = int(y - rotated.height / 2)
     img.paste(rotated, (paste_x, paste_y), rotated)
 
-# Downscale to final size
+# Downscale to final size with LANCZOS for smooth edges
 img = img.resize((FINAL_SIZE, FINAL_SIZE), Image.LANCZOS)
 
 img.save(out_path)

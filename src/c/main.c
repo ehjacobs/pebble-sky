@@ -28,10 +28,10 @@
 #define MARKER_INNER_R_QTR 60
 
 // GMT ring (off-center 24-hour annulus, shifted below dial center)
-#define GMT_DISC_OFFSET_Y   19     // Disc center below dial center
-#define GMT_RING_OUTER      49     // Outer radius of ring
+#define GMT_DISC_OFFSET_Y   17     // Disc center below dial center
+#define GMT_RING_OUTER      51     // Outer radius of ring
 #define GMT_RING_INNER      35     // Inner radius (donut hole)
-#define GMT_NUM_R           42     // Radius for number placement
+#define GMT_NUM_R           43     // Radius for number placement
 
 // Hand dimensions
 #define HOUR_HAND_LEN      50
@@ -84,10 +84,17 @@ static void init_hand_points(GPoint *pts, int length, int width, int tail) {
 // DRAWING HELPERS
 // ============================================================================
 
+static int16_t trig_round(int32_t val) {
+    // Round to nearest instead of truncating toward zero
+    if (val > 0) return (int16_t)((val + TRIG_MAX_RATIO / 2) / TRIG_MAX_RATIO);
+    if (val < 0) return (int16_t)((val - TRIG_MAX_RATIO / 2) / TRIG_MAX_RATIO);
+    return 0;
+}
+
 static GPoint point_on_circle(GPoint center, int radius, int32_t angle) {
     return (GPoint) {
-        .x = center.x + (int16_t)((sin_lookup(angle) * (int32_t)radius) / TRIG_MAX_RATIO),
-        .y = center.y - (int16_t)((cos_lookup(angle) * (int32_t)radius) / TRIG_MAX_RATIO)
+        .x = center.x + trig_round(sin_lookup(angle) * (int32_t)radius),
+        .y = center.y - trig_round(cos_lookup(angle) * (int32_t)radius)
     };
 }
 
@@ -174,6 +181,9 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
 // ============================================================================
 
 static void draw_hour_markers(GContext *ctx) {
+    GPoint rect_pts[4];
+    GPathInfo rect_info = { .num_points = 4, .points = rect_pts };
+
     for (int i = 0; i < 12; i++) {
         // Skip 12 (earth icon) and 3 (date window)
         if (i == 0 || i == 3) continue;
@@ -183,9 +193,22 @@ static void draw_hour_markers(GContext *ctx) {
         GPoint inner = point_on_circle(s_center, MARKER_INNER_R, angle);
         GPoint outer = point_on_circle(s_center, MARKER_OUTER_R, angle);
 
-        graphics_context_set_stroke_color(ctx, GColorWhite);
-        graphics_context_set_stroke_width(ctx, 4);
-        graphics_draw_line(ctx, inner, outer);
+        // Perpendicular offset for ~4px wide baton (round instead of truncate)
+        int32_t perp_angle = angle + TRIG_MAX_ANGLE / 4;
+        int32_t dx_raw = sin_lookup(perp_angle) * 2;
+        int32_t dy_raw = -cos_lookup(perp_angle) * 2;
+        int16_t dx = (int16_t)((dx_raw + (dx_raw > 0 ? TRIG_MAX_RATIO/2 : -TRIG_MAX_RATIO/2)) / TRIG_MAX_RATIO);
+        int16_t dy = (int16_t)((dy_raw + (dy_raw > 0 ? TRIG_MAX_RATIO/2 : -TRIG_MAX_RATIO/2)) / TRIG_MAX_RATIO);
+
+        rect_pts[0] = GPoint(outer.x + dx, outer.y + dy);
+        rect_pts[1] = GPoint(outer.x - dx, outer.y - dy);
+        rect_pts[2] = GPoint(inner.x - dx, inner.y - dy);
+        rect_pts[3] = GPoint(inner.x + dx, inner.y + dy);
+
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        GPath *rect_path = gpath_create(&rect_info);
+        gpath_draw_filled(ctx, rect_path);
+        gpath_destroy(rect_path);
     }
 }
 
@@ -194,7 +217,7 @@ static void draw_hour_markers(GContext *ctx) {
 // ============================================================================
 
 static void draw_earth_icon(GContext *ctx) {
-    int earth_y = s_center.y - MARKER_OUTER_R + 6;
+    int earth_y = s_center.y - MARKER_OUTER_R + 5;
     GPoint earth = GPoint(s_center.x, earth_y);
     int r = 6;
 
@@ -224,7 +247,7 @@ static void draw_earth_icon(GContext *ctx) {
                             GPoint(earth.x + 3, earth.y + r - 1));
 
     // "ZULU" label below (shifted down)
-    GRect utc_rect = GRect(s_center.x - 16, earth_y + r + 2, 32, 14);
+    GRect utc_rect = GRect(s_center.x - 16, earth_y + r + 0, 32, 14);
     graphics_context_set_text_color(ctx, GColorWhite);
     graphics_draw_text(ctx, "ZULU",
         fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -265,7 +288,7 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
         graphics_context_set_compositing_mode(ctx, GCompOpSet);
         int32_t rotation = TRIG_MAX_ANGLE - hour_angle;
         graphics_draw_rotated_bitmap(ctx, s_gmt_bitmap,
-            GPoint(52, 52),    // bitmap center
+            GPoint(54, 54),    // bitmap center
             rotation,
             disc_center);
         graphics_context_set_compositing_mode(ctx, GCompOpAssign);
