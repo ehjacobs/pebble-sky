@@ -144,13 +144,13 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
         int hour = (i + 1) % 12;
         int32_t angle = (hour * TRIG_MAX_ANGLE) / 12;
 
-        GPoint inner = point_on_circle(s_center, MONTH_RING_R - 3, angle);
-        GPoint outer = point_on_circle(s_center, MONTH_RING_R + 3, angle);
+        GPoint inner = point_on_circle(s_center, MONTH_RING_R - 4, angle);
+        GPoint outer = point_on_circle(s_center, MONTH_RING_R + 4, angle);
 
-        // Perpendicular offset matching baton width (~4px total)
+        // Perpendicular offset for square apertures (~8px wide)
         int32_t perp_angle = angle + TRIG_MAX_ANGLE / 4;
-        int16_t dx = (int16_t)((sin_lookup(perp_angle) * 2) / TRIG_MAX_RATIO);
-        int16_t dy = (int16_t)(-(cos_lookup(perp_angle) * 2) / TRIG_MAX_RATIO);
+        int16_t dx = (int16_t)((sin_lookup(perp_angle) * 4) / TRIG_MAX_RATIO);
+        int16_t dy = (int16_t)(-(cos_lookup(perp_angle) * 4) / TRIG_MAX_RATIO);
 
         rect_pts[0] = GPoint(outer.x + dx, outer.y + dy);
         rect_pts[1] = GPoint(outer.x - dx, outer.y - dy);
@@ -273,9 +273,9 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
 
     // Red inverted triangle with white interior, above the ring
     GPoint tri_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 3),
-        GPoint(disc_center.x - 7, disc_center.y - GMT_RING_OUTER - 10),
-        GPoint(disc_center.x + 7, disc_center.y - GMT_RING_OUTER - 10)
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 1),
+        GPoint(disc_center.x - 7, disc_center.y - GMT_RING_OUTER - 14),
+        GPoint(disc_center.x + 7, disc_center.y - GMT_RING_OUTER - 14)
     };
     graphics_context_set_fill_color(ctx, GColorRed);
     GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
@@ -285,9 +285,9 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
 
     // White interior
     GPoint inner_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER + 0),
-        GPoint(disc_center.x - 4, disc_center.y - GMT_RING_OUTER - 6),
-        GPoint(disc_center.x + 4, disc_center.y - GMT_RING_OUTER - 6)
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 4),
+        GPoint(disc_center.x - 4, disc_center.y - GMT_RING_OUTER - 10),
+        GPoint(disc_center.x + 4, disc_center.y - GMT_RING_OUTER - 10)
     };
     graphics_context_set_fill_color(ctx, GColorWhite);
     GPathInfo inner_info = { .num_points = 3, .points = inner_pts };
@@ -304,26 +304,34 @@ static void draw_date_window(GContext *ctx, int mday) {
     // Cyclops center at 3 o'clock
     int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2;
     int cy = s_center.y;
-    int lens_r = 13;
+    int date_w = 20;  // white date rectangle
+    int date_h = 14;
+    int pad = 4;      // grey lens padding around date rect
+    int lens_w = date_w + pad * 2;
+    int lens_h = date_h + pad * 2;
+    int corner_r = lens_h / 2;  // fully round left/right ends
 
-    // Cyclops lens — circular dome magnifier
+    GRect lens_rect = GRect(cx - lens_w / 2, cy - lens_h / 2, lens_w, lens_h);
+
+    // Grey cyclops lens (capsule shape: round left/right, flat top/bottom)
     graphics_context_set_fill_color(ctx, GColorLightGray);
-    graphics_fill_circle(ctx, GPoint(cx, cy), lens_r);
-
-    // White magnified interior
-    graphics_context_set_fill_color(ctx, GColorWhite);
-    graphics_fill_circle(ctx, GPoint(cx, cy), lens_r - 2);
+    graphics_fill_rect(ctx, lens_rect, corner_r, GCornersAll);
 
     // Lens border
     graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_circle(ctx, GPoint(cx, cy), lens_r);
+    graphics_draw_round_rect(ctx, lens_rect, corner_r);
 
-    // Magnified date number
+    // White date rectangle inside the lens
+    GRect date_rect = GRect(cx - date_w / 2, cy - date_h / 2, date_w, date_h);
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx, date_rect, 0, GCornerNone);
+
+    // Date number
     char date_buf[4];
     snprintf(date_buf, sizeof(date_buf), "%d", mday);
     graphics_context_set_text_color(ctx, GColorBlack);
-    GRect text_rect = GRect(cx - 12, cy - 11, 24, 22);
+    GRect text_rect = GRect(cx - 10, cy - 12, 20, 18);
     graphics_draw_text(ctx, date_buf,
         fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
