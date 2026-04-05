@@ -4,6 +4,7 @@ build/
 .claude/settings.local.json
 .vscode/
 screenshot_*.png
+!screenshot_gabbro.png
 !screenshot_emery.png
 preview_*.gif
 icon_*.png

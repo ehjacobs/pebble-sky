@@ -1,8 +1,8 @@
 # Sky GMT
 
-Analog GMT watchface with classic complications for the Pebble Time 2.
+Analog GMT watchface with modern complications for the Pebble Round 2.
 
-![Sky GMT](screenshot_emery.png)
+![Sky GMT](screenshot_gabbro.png)
 
 ## Features
 
@@ -10,22 +10,22 @@ Analog GMT watchface with classic complications for the Pebble Time 2.
 - 24-hour subdial with rotating disc and red triangle pointer
 - Month indicator ring (current month highlighted in red)
 - Date window at 3 o'clock
-- Fluted bezel texture
-- Earth/UTC icon at 12 o'clock
+- Clean polished dial edge
+- Earth/ZULU icon at 12 o'clock
 - Minute track with fine tick marks
 
-All graphics rendered procedurally in C — no bitmap resources.
+All graphics rendered procedurally in C with antialiased drawing.
 
 ## Platform
 
-- **Target**: Pebble Time 2 (emery, 200x228, 64-color)
+- **Target**: Pebble Round 2 (gabbro, 260x260, 64-color, round)
 - **SDK**: PebbleOS SDK 4.9.148
 
 ## Build
 
 ```bash
 pebble build
-pebble install --emulator emery
+pebble install --emulator gabbro
 ```
 
 ## Author

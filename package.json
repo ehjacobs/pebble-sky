@@ -10,7 +10,7 @@
     "uuid": "f2bad8cf-cf96-4cf5-9215-847063fa0b56",
     "sdkVersion": "3",
     "enableMultiJS": true,
-    "targetPlatforms": ["emery"],
+    "targetPlatforms": ["gabbro"],
     "watchapp": { "watchface": true },
     "resources": {
       "media": [
