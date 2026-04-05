@@ -14,9 +14,9 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 # Must match constants in main.c
-GMT_RING_OUTER = 73
-GMT_RING_INNER = 49
-GMT_NUM_R = 61
+GMT_RING_OUTER = 75
+GMT_RING_INNER = 51
+GMT_NUM_R = 63
 
 # Render at 2x then downscale for cleaner edges
 SCALE = 2

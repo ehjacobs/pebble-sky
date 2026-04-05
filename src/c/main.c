@@ -23,14 +23,14 @@
 #define TICK_OUTER_R       124   // aligned with month window outer edge
 #define TICK_MIN_INNER_R   116   // minute ticks (8px long)
 #define TICK_HALF_INNER_R  120   // half-minute ticks (4px long)
-#define MARKER_OUTER_R     109
+#define MARKER_OUTER_R     110
 #define MARKER_INNER_R      83
 
 // GMT ring (off-center 24-hour annulus, shifted below dial center)
-#define GMT_DISC_OFFSET_Y   26
-#define GMT_RING_OUTER      73
-#define GMT_RING_INNER      49
-#define GMT_NUM_R           61
+#define GMT_DISC_OFFSET_Y   24
+#define GMT_RING_OUTER      75
+#define GMT_RING_INNER      51
+#define GMT_NUM_R           63
 
 // Hand dimensions
 #define HOUR_HAND_LEN       80
@@ -42,8 +42,8 @@
 #define SEC_HAND_LEN       110
 #define SEC_HAND_TAIL       25
 
-// GMT disc bitmap center (150×150 image)
-#define GMT_BITMAP_CENTER   75
+// GMT disc bitmap center (154×154 image)
+#define GMT_BITMAP_CENTER   77
 
 // ============================================================================
 // GLOBALS
@@ -183,6 +183,9 @@ static void draw_hour_markers(GContext *ctx) {
         GPathInfo info = { .num_points = 4, .points = pts };
         GPath *path = gpath_create(&info);
         gpath_draw_filled(ctx, path);
+        graphics_context_set_stroke_color(ctx, GColorLightGray);
+        graphics_context_set_stroke_width(ctx, 1);
+        gpath_draw_outline(ctx, path);
         gpath_destroy(path);
     }
 }
@@ -442,7 +445,7 @@ static void draw_hand(GContext *ctx, int32_t angle, int lume_width,
     gpath_draw_filled(ctx, outer);
     gpath_destroy(outer);
 
-    // 5. Full hand outline — continuous black edge from base to tip
+    // 5. Full hand outline — continuous dark grey edge from base to tip
     GPoint fp[4] = {
         GPoint(-tip_w, -hand_len), GPoint(tip_w, -hand_len),
         GPoint(hand_width, hand_tail), GPoint(-hand_width, hand_tail)
@@ -451,7 +454,7 @@ static void draw_hand(GContext *ctx, int32_t angle, int lume_width,
     GPath *full = gpath_create(&fi);
     gpath_rotate_to(full, angle);
     gpath_move_to(full, s_center);
-    graphics_context_set_stroke_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
     gpath_draw_outline(ctx, full);
     gpath_destroy(full);
@@ -492,10 +495,10 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     // Center pivot
     graphics_context_set_fill_color(ctx, GColorLightGray);
     graphics_fill_circle(ctx, s_center, 7);
-    graphics_context_set_stroke_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorDarkGray);
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, s_center, 7);
-    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_context_set_fill_color(ctx, GColorDarkGray);
     graphics_fill_circle(ctx, s_center, 2);
 }
 
