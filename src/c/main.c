@@ -232,7 +232,7 @@ static void draw_earth_icon(GContext *ctx) {
 // DRAW: 24-hour GMT ring (off-center annulus)
 // ============================================================================
 
-static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
+static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes, int seconds) {
     GPoint disc_center = GPoint(s_center.x, s_center.y + GMT_DISC_OFFSET_Y);
 
     GRect ring_rect = GRect(disc_center.x - GMT_RING_OUTER,
@@ -243,7 +243,8 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     int ring_thickness = GMT_RING_OUTER - GMT_RING_INNER;
 
     int32_t hour_angle = ((hour_24 * TRIG_MAX_ANGLE) / 24) +
-                         ((minutes * TRIG_MAX_ANGLE) / 24 / 60);
+                         ((minutes * TRIG_MAX_ANGLE) / 24 / 60) +
+                         ((seconds * TRIG_MAX_ANGLE) / 24 / 3600);
 
     // Navy ring fill
     graphics_context_set_fill_color(ctx, GColorOxfordBlue);
@@ -469,8 +470,10 @@ static void draw_hand(GContext *ctx, int32_t angle, int lume_width,
 
 static void draw_hands(GContext *ctx, struct tm *t) {
     int32_t hour_angle = ((t->tm_hour % 12) * TRIG_MAX_ANGLE / 12) +
-                         (t->tm_min * TRIG_MAX_ANGLE / 12 / 60);
-    int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60);
+                         (t->tm_min * TRIG_MAX_ANGLE / 12 / 60) +
+                         (t->tm_sec * TRIG_MAX_ANGLE / 12 / 3600);
+    int32_t min_angle = (t->tm_min * TRIG_MAX_ANGLE / 60) +
+                         (t->tm_sec * TRIG_MAX_ANGLE / 60 / 60);
     int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
 
     // Draw order: hour (bottom), minute, seconds (top)
@@ -535,7 +538,7 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     draw_month_indicators(ctx, local.tm_mon);
     draw_hour_markers(ctx);
     draw_earth_icon(ctx);
-    draw_gmt_ring(ctx, utc->tm_hour, utc->tm_min);
+    draw_gmt_ring(ctx, utc->tm_hour, utc->tm_min, utc->tm_sec);
     draw_brand_text(ctx);
     draw_date_window(ctx, local.tm_mday);
     draw_hands(ctx, &local);
