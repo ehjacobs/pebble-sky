@@ -34,8 +34,8 @@
 
 // Hand dimensions
 #define HOUR_HAND_LEN       80
-#define HOUR_HAND_WIDTH     11
-#define HOUR_HAND_TAIL      17
+#define HOUR_HAND_WIDTH      7
+#define HOUR_HAND_TAIL      15
 #define MIN_HAND_LEN       119
 #define MIN_HAND_WIDTH       7
 #define MIN_HAND_TAIL       20
@@ -91,7 +91,7 @@ static void draw_dial_edge(GContext *ctx) {
 // ============================================================================
 
 static void draw_minute_track(GContext *ctx) {
-    graphics_context_set_stroke_color(ctx, GColorLightGray);
+    graphics_context_set_stroke_color(ctx, GColorWhite);
     graphics_context_set_stroke_width(ctx, 1);
 
     // 120 positions = every 30 seconds
@@ -103,7 +103,9 @@ static void draw_minute_track(GContext *ctx) {
         int32_t angle = (i * TRIG_MAX_ANGLE) / 120;
         int inner_r;
 
-        if (pos % 2 == 0) {
+        if (i == 56 || i == 64) {
+            inner_r = TICK_HALF_INNER_R;       // shortened for SFCA MADE marks
+        } else if (pos % 2 == 0) {
             inner_r = TICK_MIN_INNER_R;        // minute tick (longer)
         } else {
             inner_r = TICK_HALF_INNER_R;       // half-minute tick (shorter)
@@ -332,12 +334,43 @@ static void draw_date_window(GContext *ctx, int mday) {
 // ============================================================================
 
 static void draw_brand_text(GContext *ctx) {
-    int text_y = s_center.y + 18;
-    GRect brand_rect = GRect(s_center.x - 25, text_y, 50, 18);
     graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, "SKY",
+
+    // "SKY-PEBBLE" below center
+    int text_y = s_center.y + 18;
+    GRect brand_rect = GRect(s_center.x - 50, text_y, 100, 18);
+    graphics_draw_text(ctx, "SKY-PEBBLE",
         fonts_get_system_font(FONT_KEY_GOTHIC_18),
         brand_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+    // "SFCA MADE" at bottom — gibberish marks replacing shortened ticks
+    // Uses same vertex computation as hour markers / month indicators
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    int32_t mark_out = TICK_HALF_INNER_R - 1;
+    int32_t mark_in = TICK_MIN_INNER_R;
+
+    int sfca_made[] = { 64, 56 };  // positions: minute 32, minute 28
+    for (int m = 0; m < 2; m++) {
+        int32_t angle = (sfca_made[m] * TRIG_MAX_ANGLE) / 120;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
+        int32_t hw = 10;
+
+        GPoint pts[4];
+        pts[0] = GPoint(s_center.x + trig_round(sa * mark_out + ca * hw),
+                        s_center.y - trig_round(ca * mark_out - sa * hw));
+        pts[1] = GPoint(s_center.x + trig_round(sa * mark_out - ca * hw),
+                        s_center.y - trig_round(ca * mark_out + sa * hw));
+        pts[2] = GPoint(s_center.x + trig_round(sa * mark_in - ca * hw),
+                        s_center.y - trig_round(ca * mark_in + sa * hw));
+        pts[3] = GPoint(s_center.x + trig_round(sa * mark_in + ca * hw),
+                        s_center.y - trig_round(ca * mark_in - sa * hw));
+
+        GPathInfo info = { .num_points = 4, .points = pts };
+        GPath *p = gpath_create(&info);
+        gpath_draw_filled(ctx, p);
+        gpath_destroy(p);
+    }
 }
 
 // ============================================================================
@@ -438,7 +471,7 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
 
     // Draw order: hour (bottom), minute, seconds (top)
-    draw_hand(ctx, hour_angle, 5, HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL);
+    draw_hand(ctx, hour_angle, 3, HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL);
     draw_hand(ctx, min_angle, 3, MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL);
 
     // Seconds hand — tapered from 3px at center to 1px at tip
