@@ -54,27 +54,7 @@ static Layer  *s_canvas_layer;
 
 static GPoint s_center;
 
-static GPath *s_hour_path;
-static GPath *s_min_path;
 static GBitmap *s_gmt_bitmap;
-
-static GPoint s_hour_pts[4];
-static GPoint s_min_pts[4];
-
-static GPathInfo s_hour_info = { .num_points = 4, .points = s_hour_pts };
-static GPathInfo s_min_info  = { .num_points = 4, .points = s_min_pts };
-
-// ============================================================================
-// HAND GEOMETRY — gradually tapered baton (Sky-Dweller style)
-// ============================================================================
-
-static void init_hand_points(GPoint *pts, int length, int width, int tail) {
-    int tip_w = width - 2;  // subtle taper: slightly narrower at tip
-    pts[0] = GPoint(-tip_w, -length);      // tip left
-    pts[1] = GPoint( tip_w, -length);      // tip right
-    pts[2] = GPoint( width,  tail);        // base right (full width)
-    pts[3] = GPoint(-width,  tail);        // base left
-}
 
 // ============================================================================
 // DRAWING HELPERS
@@ -94,7 +74,7 @@ static GPoint point_on_circle(GPoint center, int radius, int32_t angle) {
 }
 
 // ============================================================================
-// DRAW: Dial edge (clean polished ring replacing fluted bezel)
+// DRAW: Dial edge
 // ============================================================================
 
 static void draw_dial_edge(GContext *ctx) {
@@ -285,8 +265,8 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     // Red inverted triangle pointer above the ring
     GPoint tri_pts[] = {
         GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 1),
-        GPoint(disc_center.x - 10, disc_center.y - GMT_RING_OUTER - 22),
-        GPoint(disc_center.x + 10, disc_center.y - GMT_RING_OUTER - 22)
+        GPoint(disc_center.x - 8, disc_center.y - GMT_RING_OUTER - 16),
+        GPoint(disc_center.x + 8, disc_center.y - GMT_RING_OUTER - 16)
     };
     graphics_context_set_fill_color(ctx, GColorRed);
     GPathInfo tri_info = { .num_points = 3, .points = tri_pts };
@@ -294,11 +274,11 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes) {
     gpath_draw_filled(ctx, tri_path);
     gpath_destroy(tri_path);
 
-    // White inner triangle
+    // White inner triangle — proportional 2px inset
     GPoint inner_pts[] = {
-        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 5),
-        GPoint(disc_center.x - 6, disc_center.y - GMT_RING_OUTER - 16),
-        GPoint(disc_center.x + 6, disc_center.y - GMT_RING_OUTER - 16)
+        GPoint(disc_center.x, disc_center.y - GMT_RING_OUTER - 4),
+        GPoint(disc_center.x - 5, disc_center.y - GMT_RING_OUTER - 14),
+        GPoint(disc_center.x + 5, disc_center.y - GMT_RING_OUTER - 14)
     };
     graphics_context_set_fill_color(ctx, GColorWhite);
     GPathInfo inner_info = { .num_points = 3, .points = inner_pts };
@@ -364,33 +344,91 @@ static void draw_brand_text(GContext *ctx) {
 // DRAW: Clock hands
 // ============================================================================
 
-static void draw_hand(GContext *ctx, GPath *path, int32_t angle,
-                      int lume_width, int hand_len) {
-    gpath_rotate_to(path, angle);
-    gpath_move_to(path, s_center);
+static void draw_hand(GContext *ctx, int32_t angle, int lume_width,
+                      int hand_len, int hand_width, int hand_tail) {
+    int tip_w = hand_width - 2;
+    int total = hand_tail + hand_len;
+    int cut_start = 18;
+    int cut_end = hand_len / 2 - 3;
+    int lume_start_r = hand_len / 2 + 3;
+    // Half-width at cutout boundaries (linear taper)
+    int hw_cs = hand_width - 2 * (cut_start + hand_tail) / total;
+    int hw_ce = hand_width - 2 * (cut_end + hand_tail) / total;
 
-    // Polished metal body
+    // Rail width = hand edge minus lume half-width (cutout matches lume width)
+    int rail_cs = hw_cs - lume_width;
+    int rail_ce = hw_ce - lume_width;
+
     graphics_context_set_fill_color(ctx, GColorLightGray);
-    gpath_draw_filled(ctx, path);
 
-    // Black outline
+    // 1. Base section fill
+    GPoint bp[4] = {
+        GPoint(-hw_cs, -cut_start), GPoint(hw_cs, -cut_start),
+        GPoint(hand_width, hand_tail), GPoint(-hand_width, hand_tail)
+    };
+    GPathInfo bi = { .num_points = 4, .points = bp };
+    GPath *base = gpath_create(&bi);
+    gpath_rotate_to(base, angle);
+    gpath_move_to(base, s_center);
+    gpath_draw_filled(ctx, base);
+    gpath_destroy(base);
+
+    // 2. Left rail fill through cutout (extended 3px each end to overlap sections)
+    GPoint lp[4] = {
+        GPoint(-hw_ce, -(cut_end + 3)), GPoint(-hw_ce + rail_ce, -(cut_end + 3)),
+        GPoint(-hw_cs + rail_cs, -(cut_start - 3)), GPoint(-hw_cs, -(cut_start - 3))
+    };
+    GPathInfo li = { .num_points = 4, .points = lp };
+    GPath *lrail = gpath_create(&li);
+    gpath_rotate_to(lrail, angle);
+    gpath_move_to(lrail, s_center);
+    gpath_draw_filled(ctx, lrail);
+    gpath_destroy(lrail);
+
+    // 3. Right rail fill through cutout (extended 3px each end to overlap sections)
+    GPoint rp[4] = {
+        GPoint(hw_ce - rail_ce, -(cut_end + 3)), GPoint(hw_ce, -(cut_end + 3)),
+        GPoint(hw_cs, -(cut_start - 3)), GPoint(hw_cs - rail_cs, -(cut_start - 3))
+    };
+    GPathInfo ri = { .num_points = 4, .points = rp };
+    GPath *rrail = gpath_create(&ri);
+    gpath_rotate_to(rrail, angle);
+    gpath_move_to(rrail, s_center);
+    gpath_draw_filled(ctx, rrail);
+    gpath_destroy(rrail);
+
+    // 4. Outer section fill
+    GPoint op[4] = {
+        GPoint(-tip_w, -hand_len), GPoint(tip_w, -hand_len),
+        GPoint(hw_ce, -cut_end), GPoint(-hw_ce, -cut_end)
+    };
+    GPathInfo oi = { .num_points = 4, .points = op };
+    GPath *outer = gpath_create(&oi);
+    gpath_rotate_to(outer, angle);
+    gpath_move_to(outer, s_center);
+    gpath_draw_filled(ctx, outer);
+    gpath_destroy(outer);
+
+    // 5. Full hand outline — continuous black edge from base to tip
+    GPoint fp[4] = {
+        GPoint(-tip_w, -hand_len), GPoint(tip_w, -hand_len),
+        GPoint(hand_width, hand_tail), GPoint(-hand_width, hand_tail)
+    };
+    GPathInfo fi = { .num_points = 4, .points = fp };
+    GPath *full = gpath_create(&fi);
+    gpath_rotate_to(full, angle);
+    gpath_move_to(full, s_center);
     graphics_context_set_stroke_color(ctx, GColorBlack);
     graphics_context_set_stroke_width(ctx, 1);
-    gpath_draw_outline(ctx, path);
+    gpath_draw_outline(ctx, full);
+    gpath_destroy(full);
 
-    // Skeleton cutout — rectangular opening showing dial through hand
-    GPoint cut_start = point_on_circle(s_center, 18, angle);
-    GPoint cut_end = point_on_circle(s_center, hand_len / 2 - 3, angle);
-    graphics_context_set_stroke_color(ctx, GColorDukeBlue);
-    graphics_context_set_stroke_width(ctx, lume_width);
-    graphics_draw_line(ctx, cut_start, cut_end);
-
-    // Luminous strip — outer portion only (grey bridge visible between)
-    GPoint lume_start = point_on_circle(s_center, hand_len / 2 + 3, angle);
-    GPoint lume_end = point_on_circle(s_center, hand_len - 6, angle);
+    // 6. Luminous strip on outer section
+    GPoint ls = point_on_circle(s_center, lume_start_r, angle);
+    GPoint le = point_on_circle(s_center, hand_len - 6, angle);
     graphics_context_set_stroke_color(ctx, GColorWhite);
     graphics_context_set_stroke_width(ctx, lume_width);
-    graphics_draw_line(ctx, lume_start, lume_end);
+    graphics_draw_line(ctx, ls, le);
 }
 
 static void draw_hands(GContext *ctx, struct tm *t) {
@@ -400,8 +438,8 @@ static void draw_hands(GContext *ctx, struct tm *t) {
     int32_t sec_angle = (t->tm_sec * TRIG_MAX_ANGLE / 60);
 
     // Draw order: hour (bottom), minute, seconds (top)
-    draw_hand(ctx, s_hour_path, hour_angle, 5, HOUR_HAND_LEN);
-    draw_hand(ctx, s_min_path, min_angle, 3, MIN_HAND_LEN);
+    draw_hand(ctx, hour_angle, 5, HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL);
+    draw_hand(ctx, min_angle, 3, MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL);
 
     // Seconds hand — tapered from 3px at center to 1px at tip
     GPoint sec_tip = point_on_circle(s_center, SEC_HAND_LEN, sec_angle);
@@ -485,17 +523,11 @@ static void main_window_load(Window *window) {
     layer_set_update_proc(s_canvas_layer, canvas_update_proc);
     layer_add_child(window_layer, s_canvas_layer);
 
-    init_hand_points(s_hour_pts, HOUR_HAND_LEN, HOUR_HAND_WIDTH, HOUR_HAND_TAIL);
-    init_hand_points(s_min_pts, MIN_HAND_LEN, MIN_HAND_WIDTH, MIN_HAND_TAIL);
-    s_hour_path = gpath_create(&s_hour_info);
-    s_min_path  = gpath_create(&s_min_info);
     s_gmt_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GMT_DISC);
 }
 
 static void main_window_unload(Window *window) {
     if (s_gmt_bitmap) { gbitmap_destroy(s_gmt_bitmap); s_gmt_bitmap = NULL; }
-    if (s_hour_path)  { gpath_destroy(s_hour_path);    s_hour_path = NULL; }
-    if (s_min_path)   { gpath_destroy(s_min_path);     s_min_path = NULL; }
     if (s_canvas_layer) { layer_destroy(s_canvas_layer); s_canvas_layer = NULL; }
 }
 
