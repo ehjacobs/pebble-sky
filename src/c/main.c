@@ -524,15 +524,21 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     struct tm *t = localtime(&now);
     if (!t) return;
 
+    // Copy local time before gmtime() overwrites the shared buffer
+    struct tm local = *t;
+
+    // UTC time for the 24-hour GMT ring
+    struct tm *utc = gmtime(&now);
+
     draw_dial_edge(ctx);
     draw_minute_track(ctx);
-    draw_month_indicators(ctx, t->tm_mon);
+    draw_month_indicators(ctx, local.tm_mon);
     draw_hour_markers(ctx);
     draw_earth_icon(ctx);
-    draw_gmt_ring(ctx, t->tm_hour, t->tm_min);
+    draw_gmt_ring(ctx, utc->tm_hour, utc->tm_min);
     draw_brand_text(ctx);
-    draw_date_window(ctx, t->tm_mday);
-    draw_hands(ctx, t);
+    draw_date_window(ctx, local.tm_mday);
+    draw_hands(ctx, &local);
 }
 
 // ============================================================================
