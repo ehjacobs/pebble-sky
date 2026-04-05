@@ -155,29 +155,33 @@ static void draw_month_indicators(GContext *ctx, int current_month) {
 // ============================================================================
 
 static void draw_hour_markers(GContext *ctx) {
-    GPoint baton_pts[4];
-    GPathInfo baton_info = { .num_points = 4, .points = baton_pts };
+    graphics_context_set_fill_color(ctx, GColorWhite);
 
     for (int i = 0; i < 12; i++) {
         if (i == 0 || i == 3) continue;
 
         int32_t angle = (i * TRIG_MAX_ANGLE) / 12;
-        // Angled markers appear thinner due to antialiasing; compensate
-        int half_w = (i == 6 || i == 9) ? 3 : 4;
+        int32_t sa = sin_lookup(angle);
+        int32_t ca = cos_lookup(angle);
+        int32_t hw = 3;
+        int32_t r_out = MARKER_OUTER_R;
+        int32_t r_in = MARKER_INNER_R;
 
-        // Define baton at 12 o'clock, then rotate to position
-        baton_pts[0] = GPoint(-half_w, -MARKER_OUTER_R);
-        baton_pts[1] = GPoint( half_w, -MARKER_OUTER_R);
-        baton_pts[2] = GPoint( half_w, -MARKER_INNER_R);
-        baton_pts[3] = GPoint(-half_w, -MARKER_INNER_R);
+        // Compute each vertex in one trig_round to minimize rounding error
+        GPoint pts[4];
+        pts[0] = GPoint(s_center.x + trig_round(sa * r_out + ca * hw),
+                        s_center.y - trig_round(ca * r_out - sa * hw));
+        pts[1] = GPoint(s_center.x + trig_round(sa * r_out - ca * hw),
+                        s_center.y - trig_round(ca * r_out + sa * hw));
+        pts[2] = GPoint(s_center.x + trig_round(sa * r_in - ca * hw),
+                        s_center.y - trig_round(ca * r_in + sa * hw));
+        pts[3] = GPoint(s_center.x + trig_round(sa * r_in + ca * hw),
+                        s_center.y - trig_round(ca * r_in - sa * hw));
 
-        GPath *baton_path = gpath_create(&baton_info);
-        gpath_rotate_to(baton_path, angle);
-        gpath_move_to(baton_path, s_center);
-
-        graphics_context_set_fill_color(ctx, GColorWhite);
-        gpath_draw_filled(ctx, baton_path);
-        gpath_destroy(baton_path);
+        GPathInfo info = { .num_points = 4, .points = pts };
+        GPath *path = gpath_create(&info);
+        gpath_draw_filled(ctx, path);
+        gpath_destroy(path);
     }
 }
 
