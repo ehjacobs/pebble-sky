@@ -307,24 +307,8 @@ static void draw_gmt_ring(GContext *ctx, int hour_24, int minutes, int seconds) 
 static void draw_date_window(GContext *ctx, int mday) {
     int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - 2;
     int cy = s_center.y;
-    int date_h = 18;
-    int pad = 5;
-
     int date_w = 26;
-    int lens_w = date_w + pad * 2;
-    int lens_h = date_h + pad * 2;
-    int corner_r = lens_h / 2;
-
-    GRect lens_rect = GRect(cx - lens_w / 2, cy - lens_h / 2, lens_w, lens_h);
-
-    // Grey lens
-    graphics_context_set_fill_color(ctx, GColorLightGray);
-    graphics_fill_rect(ctx, lens_rect, corner_r, GCornersAll);
-
-    // Lens border
-    graphics_context_set_stroke_color(ctx, GColorDarkGray);
-    graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_round_rect(ctx, lens_rect, corner_r);
+    int date_h = 18;
 
     // White inner rectangle with light blue border
     GRect date_rect = GRect(cx - date_w / 2, cy - date_h / 2, date_w, date_h);
@@ -363,6 +347,20 @@ static void draw_date_window(GContext *ctx, int mday) {
             fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
             text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
+}
+
+static void draw_date_lens(GContext *ctx) {
+    int cx = s_center.x + (MARKER_INNER_R + MARKER_OUTER_R) / 2 - 2;
+    int cy = s_center.y;
+    int pad = 5;
+    int lens_w = 26 + pad * 2;
+    int lens_h = 18 + pad * 2;
+    int corner_r = lens_h / 2;
+
+    GRect lens_rect = GRect(cx - lens_w / 2, cy - lens_h / 2, lens_w, lens_h);
+    graphics_context_set_stroke_color(ctx, GColorPictonBlue);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_round_rect(ctx, lens_rect, corner_r);
 }
 
 // ============================================================================
@@ -616,6 +614,7 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     draw_brand_text(ctx);
     draw_date_window(ctx, local.tm_mday);
     draw_hands(ctx, &local);
+    draw_date_lens(ctx);
 }
 
 // ============================================================================
