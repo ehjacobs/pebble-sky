@@ -42,6 +42,32 @@ export PATH="$HOME/.local/bin:$HOME/Library/Application Support/Pebble SDK/SDKs/
 export DYLD_LIBRARY_PATH="$HOME/Library/Application Support/Pebble SDK/SDKs/4.9.148/toolchain/lib"
 ```
 
+### Emulator Controls
+
+```bash
+# Set watch time (HH:MM:SS format)
+pebble emu-set-time --emulator gabbro 10:10:16
+
+# Bluetooth connection (triggers connection_service callback)
+pebble emu-bt-connection --connected no --emulator gabbro   # disconnect
+pebble emu-bt-connection --connected yes --emulator gabbro  # reconnect
+
+# Accelerometer (presets: tilt-left/right/forward/back, gravity±x/y/z, none)
+pebble emu-accel --emulator gabbro gravity+x   # rapid gravity flip triggers tap detection
+pebble emu-accel --emulator gabbro gravity-x
+
+# Battery level
+pebble emu-battery --emulator gabbro --percent 75
+```
+
+### Generating Screenshots
+
+All screenshots use 10:10:16 AM as the display time. Set time with `emu-set-time` before capturing.
+
+- `screenshot_gabbro.png` — main watchface (date in window)
+- `screenshot_battery.png` — battery indicator (trigger via gravity flip for tap detection)
+- `screenshot_bluetooth.png` — BT disconnect (red Bluetooth rune in date window)
+
 ## Project Structure
 
 ```

@@ -5,6 +5,8 @@ build/
 .vscode/
 screenshot_*.png
 !screenshot_gabbro.png
+!screenshot_battery.png
+!screenshot_bluetooth.png
 preview_*.gif
 icon_*.png
 inspiration.png

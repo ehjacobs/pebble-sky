@@ -18,6 +18,11 @@
           "type": "png",
           "name": "GMT_DISC",
           "file": "gmt_disc.png"
+        },
+        {
+          "type": "png",
+          "name": "BT_ICON",
+          "file": "bt_icon.png"
         }
       ]
     }

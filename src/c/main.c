@@ -23,7 +23,7 @@
 #define TICK_OUTER_R       124   // aligned with month window outer edge
 #define TICK_MIN_INNER_R   116   // minute ticks (8px long)
 #define TICK_HALF_INNER_R  120   // half-minute ticks (4px long)
-#define MARKER_OUTER_R     110
+#define MARKER_OUTER_R     113
 #define MARKER_INNER_R      83
 
 // GMT ring (off-center 24-hour annulus, shifted below dial center)
@@ -58,6 +58,7 @@ static Layer  *s_canvas_layer;
 static GPoint s_center;
 
 static GBitmap *s_gmt_bitmap;
+static GBitmap *s_bt_icon;
 
 // Battery display state (shown on wrist tap)
 static bool s_show_battery = false;
@@ -334,7 +335,7 @@ static void draw_hour_markers(GContext *ctx) {
 // ============================================================================
 
 static void draw_earth_icon(GContext *ctx) {
-    int earth_y = s_center.y - MARKER_OUTER_R + 7;
+    int earth_y = s_center.y - MARKER_OUTER_R + 10;
     GPoint earth = GPoint(s_center.x, earth_y);
     int r = 8;
 
@@ -453,20 +454,11 @@ static void draw_date_window(GContext *ctx, int mday) {
             fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
             text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     } else if (!s_bt_connected) {
-        // Draw Bluetooth rune in red (disconnected indicator)
-        graphics_context_set_stroke_color(ctx, GColorRed);
-        graphics_context_set_stroke_width(ctx, 1);
-        int h = 6, w = 3;
-        // Vertical line
-        graphics_draw_line(ctx, GPoint(cx, cy - h), GPoint(cx, cy + h));
-        // Lower-left to top
-        graphics_draw_line(ctx, GPoint(cx - w, cy + h / 2), GPoint(cx, cy - h));
-        // Top to lower-right
-        graphics_draw_line(ctx, GPoint(cx, cy - h), GPoint(cx + w, cy + h / 2));
-        // Upper-left to bottom
-        graphics_draw_line(ctx, GPoint(cx - w, cy - h / 2), GPoint(cx, cy + h));
-        // Bottom to upper-right
-        graphics_draw_line(ctx, GPoint(cx, cy + h), GPoint(cx + w, cy - h / 2));
+        // Draw Bluetooth icon in red (disconnected indicator)
+        if (s_bt_icon) {
+            GRect icon_rect = GRect(cx - 4, cy - 7, 9, 14);
+            graphics_draw_bitmap_in_rect(ctx, s_bt_icon, icon_rect);
+        }
     } else {
         char date_buf[4];
         snprintf(date_buf, sizeof(date_buf), "%d", mday);
@@ -589,12 +581,7 @@ static void draw_hands(GContext *ctx, struct tm *t) {
         graphics_context_set_fill_color(ctx, GColorDarkGray);
         graphics_fill_circle(ctx, s_center, 2);
     } else {
-        // Plain pivot (no seconds hand)
-        graphics_context_set_fill_color(ctx, GColorLightGray);
-        graphics_fill_circle(ctx, s_center, 7);
-        graphics_context_set_stroke_color(ctx, GColorDarkGray);
-        graphics_context_set_stroke_width(ctx, 1);
-        graphics_draw_circle(ctx, s_center, 7);
+        // No seconds hand — just the center dot
         graphics_context_set_fill_color(ctx, GColorDarkGray);
         graphics_fill_circle(ctx, s_center, 2);
     }
@@ -786,6 +773,18 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, s_canvas_layer);
 
     s_gmt_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GMT_DISC);
+    s_bt_icon = gbitmap_create_with_resource(RESOURCE_ID_BT_ICON);
+    // Remap palette: black (symbol) → red, white (background) stays white
+    if (s_bt_icon) {
+        GColor *palette = gbitmap_get_palette(s_bt_icon);
+        if (palette) {
+            for (int i = 0; i < 2; i++) {
+                if (gcolor_equal(palette[i], GColorBlack)) {
+                    palette[i] = GColorRed;
+                }
+            }
+        }
+    }
 
     // Pre-allocate all GPath objects
     create_static_paths();
@@ -802,6 +801,7 @@ static void main_window_load(Window *window) {
 static void main_window_unload(Window *window) {
     unobstructed_area_service_unsubscribe();
     destroy_all_paths();
+    if (s_bt_icon) { gbitmap_destroy(s_bt_icon); s_bt_icon = NULL; }
     if (s_gmt_bitmap) { gbitmap_destroy(s_gmt_bitmap); s_gmt_bitmap = NULL; }
     if (s_canvas_layer) { layer_destroy(s_canvas_layer); s_canvas_layer = NULL; }
 }
