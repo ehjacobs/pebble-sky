@@ -69,7 +69,7 @@ The watchface features these classic GMT complications:
 1. **Analog hands** — skeletonized hour/minute hands with transparent cutouts (4-piece fill: base, left rail, right rail, outer tip) and luminous strips, plus tapered seconds hand
 2. **24-hour GMT ring** — off-center rotating disc showing UTC time (via `gmtime()`), with red/white inverted triangle pointer
 3. **Month indicator ring** — 12 small squares around the dial at each hour position; current month shown in red, others white (Jan=1 o'clock through Dec=12 o'clock)
-4. **Date window** — white rectangle at 3 o'clock showing day of month with lens; on wrist tap, temporarily shows battery level (color-coded: green ≥40%, yellow ≥20%, red <20%) for 3 seconds
+4. **Date window** — white rectangle at 3 o'clock showing day of month with lens; on Bluetooth disconnect, shows red Bluetooth rune (persistent until reconnected) with double-pulse vibration; on wrist tap, temporarily shows battery level (color-coded: green ≥40%, yellow ≥20%, red <20%) for 3 seconds. Priority: battery > BT disconnect > date
 5. **Clean dial edge** — polished light/dark concentric rings (no fluted bezel)
 6. **Baton indices** — rectangular hour markers with light grey border, uniform size at all positions (skipping 12 and 3 o'clock)
 7. **Brand text** — "SKY-PEBBLE" below center, decorative marks at bottom flanking 6 o'clock

@@ -68,6 +68,9 @@ static AppTimer *s_battery_timer = NULL;
 static bool s_seconds_active = true;
 static AppTimer *s_seconds_timer = NULL;
 
+// Bluetooth connection state
+static bool s_bt_connected = true;
+
 // Pre-allocated paths: static dial elements (computed once in window_load)
 static GPath *s_month_paths[12];
 static GPoint s_month_pts[12][4];
@@ -449,6 +452,21 @@ static void draw_date_window(GContext *ctx, int mday) {
         graphics_draw_text(ctx, bat_buf,
             fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
             text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    } else if (!s_bt_connected) {
+        // Draw Bluetooth rune in red (disconnected indicator)
+        graphics_context_set_stroke_color(ctx, GColorRed);
+        graphics_context_set_stroke_width(ctx, 1);
+        int h = 6, w = 3;
+        // Vertical line
+        graphics_draw_line(ctx, GPoint(cx, cy - h), GPoint(cx, cy + h));
+        // Lower-left to top
+        graphics_draw_line(ctx, GPoint(cx - w, cy + h / 2), GPoint(cx, cy - h));
+        // Top to lower-right
+        graphics_draw_line(ctx, GPoint(cx, cy - h), GPoint(cx + w, cy + h / 2));
+        // Upper-left to bottom
+        graphics_draw_line(ctx, GPoint(cx - w, cy - h / 2), GPoint(cx, cy + h));
+        // Bottom to upper-right
+        graphics_draw_line(ctx, GPoint(cx, cy + h), GPoint(cx + w, cy - h / 2));
     } else {
         char date_buf[4];
         snprintf(date_buf, sizeof(date_buf), "%d", mday);
@@ -637,6 +655,20 @@ static void activate_seconds(void) {
     }
 }
 
+// ============================================================================
+// BLUETOOTH CONNECTION
+// ============================================================================
+
+static void bluetooth_callback(bool connected) {
+    s_bt_connected = connected;
+    if (!connected) {
+        vibes_double_pulse();
+    }
+    if (s_canvas_layer) {
+        layer_mark_dirty(s_canvas_layer);
+    }
+}
+
 static void accel_data_handler(AccelData *data, uint32_t num_samples) {
     if (num_samples < 2) return;
 
@@ -784,6 +816,10 @@ static void init(void) {
         .load = main_window_load,
         .unload = main_window_unload
     });
+    connection_service_subscribe((ConnectionHandlers) {
+        .pebble_app_connection_handler = bluetooth_callback
+    });
+    s_bt_connected = connection_service_peek_pebble_app_connection();
     window_stack_push(s_main_window, true);
     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
     accel_data_service_subscribe(25, accel_data_handler);
@@ -792,6 +828,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
+    connection_service_unsubscribe();
     accel_data_service_unsubscribe();
     if (s_battery_timer) { app_timer_cancel(s_battery_timer); s_battery_timer = NULL; }
     if (s_seconds_timer) { app_timer_cancel(s_seconds_timer); s_seconds_timer = NULL; }
